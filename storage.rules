@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /couples/{coupleId}/{allPaths=**} {
+      allow read: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid));
+      allow create, update: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid))
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('^(image|audio)/.*');
+      allow delete: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid));
+    }
+  }
+}

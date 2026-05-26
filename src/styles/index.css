@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --cursor-x: 50vw;
+  --cursor-y: 30vh;
+  --bg-spot-main: rgba(255, 182, 200, 0.16);
+  --bg-spot-two: rgba(216, 160, 127, 0.13);
+  --bg-spot-three: rgba(110, 45, 127, 0.28);
+  --bg-base-a: #05040a;
+  --bg-base-b: #130817;
+  --bg-base-c: #05040a;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #05040a;
+  font-family: 'Manrope', 'Trebuchet MS', sans-serif;
+}
+
+body.theme-aurora .cinematic-bg {
+  background:
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), rgba(174, 234, 255, 0.16), transparent 18rem),
+    radial-gradient(circle at 20% 12%, rgba(255, 182, 200, 0.15), transparent 26rem),
+    radial-gradient(circle at 80% 20%, rgba(120, 228, 196, 0.2), transparent 24rem),
+    linear-gradient(135deg, #05040a 0%, #081b24 50%, #060710 100%);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.glass {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.04));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(22px);
+}
+
+.cinematic-bg {
+  background:
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), var(--bg-spot-main), transparent 18rem),
+    radial-gradient(circle at 15% 10%, var(--bg-spot-two), transparent 30rem),
+    radial-gradient(circle at 85% 20%, var(--bg-spot-three), transparent 26rem),
+    linear-gradient(135deg, var(--bg-base-a) 0%, var(--bg-base-b) 50%, var(--bg-base-c) 100%);
+}
+
+.aurora-border {
+  position: relative;
+}
+
+.aurora-border::before {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgba(255, 182, 200, 0.8), rgba(216, 160, 127, 0.55), rgba(110, 45, 127, 0.7));
+  content: '';
+  filter: blur(14px);
+  opacity: 0.5;
+}
