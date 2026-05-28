@@ -292,6 +292,13 @@ export default function ChatPanel({ onMessageCountChange }) {
         subtitle="Text is encrypted on the client before storage. Attachments use authenticated protected storage."
       />
 
+      {!firebaseEnabled ? (
+        <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold">
+          <AlertTriangle size={13} />
+          Local demo mode is active. Messages stay in this browser until Firebase env vars are loaded and the app is restarted.
+        </div>
+      ) : null}
+
       <div className="mb-3 grid gap-2 rounded-2xl bg-black/30 p-3 text-xs text-pink-100/80 sm:grid-cols-3">
         <p className="inline-flex items-center gap-2">
           <ShieldCheck size={14} className="text-roseGold" />
