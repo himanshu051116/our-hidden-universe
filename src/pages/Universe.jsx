@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Cake, DatabaseZap, LogOut, Sparkles } from 'lucide-react';
+import { Cake, Copy, DatabaseZap, LogOut, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
@@ -8,7 +8,7 @@ import useEasterEggs from '../hooks/useEasterEggs.js';
 import { resetCoupleData } from '../services/resetService.js';
 
 export default function Universe() {
-  const { logout, coupleId } = useAuth();
+  const { logout, coupleId, coupleCodeDisplay } = useAuth();
   const { easterEggMessage } = useEasterEggs();
   const [messageCount, setMessageCount] = useState(() => {
     try {
@@ -22,6 +22,7 @@ export default function Universe() {
   const [resetBusy, setResetBusy] = useState(false);
   const [resetVersion, setResetVersion] = useState(0);
   const [resetStatus, setResetStatus] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
 
   async function onResetData() {
     const confirmed = window.confirm('Clear all couple data for this universe? This removes chat records and saved entries.');
@@ -45,6 +46,18 @@ export default function Universe() {
     }
   }
 
+  async function copyCode() {
+    if (!coupleCodeDisplay) return;
+    try {
+      await navigator.clipboard.writeText(coupleCodeDisplay);
+      setCopyStatus('Couple code copied');
+      window.setTimeout(() => setCopyStatus(''), 1800);
+    } catch {
+      setCopyStatus('Copy failed');
+      window.setTimeout(() => setCopyStatus(''), 1800);
+    }
+  }
+
   return (
     <PageShell className="px-4 pb-12 pt-6 sm:px-8">
       <div className="mx-auto w-full max-w-6xl">
@@ -55,6 +68,17 @@ export default function Universe() {
               <h1 className="font-display text-3xl text-white sm:text-4xl">Private space for your love story</h1>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              {coupleCodeDisplay ? (
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  className="inline-flex items-center gap-2 rounded-full border border-blush/40 bg-blush/10 px-3 py-2 text-xs text-blush transition hover:bg-blush/20"
+                  title="Copy your private couple code"
+                >
+                  <Copy size={13} />
+                  {coupleCodeDisplay}
+                </button>
+              ) : null}
               <UniverseNavLink to="/universe/home">Home</UniverseNavLink>
               <UniverseNavLink to="/universe/chat">Chat</UniverseNavLink>
               <UniverseNavLink to="/universe/timeline">Timeline</UniverseNavLink>
@@ -88,6 +112,12 @@ export default function Universe() {
         {resetStatus ? (
           <p className="mb-4 rounded-2xl border border-white/15 bg-black/35 px-4 py-2 text-xs text-pink-100/85">
             {resetStatus}
+          </p>
+        ) : null}
+
+        {copyStatus ? (
+          <p className="mb-4 inline-flex rounded-full border border-white/15 bg-black/35 px-4 py-2 text-xs text-pink-100/85">
+            {copyStatus}
           </p>
         ) : null}
 

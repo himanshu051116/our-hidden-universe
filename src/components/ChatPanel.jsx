@@ -90,9 +90,16 @@ export default function ChatPanel({ onMessageCountChange }) {
   useEffect(() => {
     if (!firebaseEnabled || !coupleId) return undefined;
 
-    const unsubscribeMessages = subscribeToEncryptedMessages(coupleId, sharedSecret, (nextMessages) => {
-      setMessages(nextMessages);
-    });
+    const unsubscribeMessages = subscribeToEncryptedMessages(
+      coupleId,
+      sharedSecret,
+      (nextMessages) => {
+        setMessages(nextMessages);
+      },
+      () => {
+        showNotice('Chat sync is blocked. Check that both partners joined the same couple code and Firestore rules are deployed.');
+      },
+    );
     const unsubscribeTyping = subscribeToTypingState(coupleId, setTypingMap);
 
     return () => {

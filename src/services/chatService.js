@@ -29,47 +29,53 @@ function fingerprintForEncryptedMessage(encrypted = {}) {
   return `${cipher.length}:${iv.length}:${salt.length}:${integrity.length}:${integrity}:${iv}`;
 }
 
-export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages) {
+export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages, onError) {
   if (!firebaseEnabled || !coupleId) return () => {};
   const decryptedCache = new Map();
 
   const q = query(pathFor(coupleId, 'messages'), orderBy('createdAt', 'asc'));
-  return onSnapshot(q, async (snapshot) => {
-    const activeIds = new Set(snapshot.docs.map((item) => item.id));
-    for (const key of decryptedCache.keys()) {
-      if (!activeIds.has(key)) decryptedCache.delete(key);
-    }
+  return onSnapshot(
+    q,
+    async (snapshot) => {
+      const activeIds = new Set(snapshot.docs.map((item) => item.id));
+      for (const key of decryptedCache.keys()) {
+        if (!activeIds.has(key)) decryptedCache.delete(key);
+      }
 
-    const messages = await Promise.all(
-      snapshot.docs.map(async (messageDoc) => {
-        const data = messageDoc.data();
-        if (data.type && data.type !== 'text') {
-          return { id: messageDoc.id, ...data };
-        }
+      const messages = await Promise.all(
+        snapshot.docs.map(async (messageDoc) => {
+          const data = messageDoc.data();
+          if (data.type && data.type !== 'text') {
+            return { id: messageDoc.id, ...data };
+          }
 
-        const encrypted = data.encrypted || {};
-        const fingerprint = fingerprintForEncryptedMessage(encrypted);
-        const cached = decryptedCache.get(messageDoc.id);
-        if (cached && cached.fingerprint === fingerprint) {
-          return { id: messageDoc.id, ...data, text: cached.text };
-        }
+          const encrypted = data.encrypted || {};
+          const fingerprint = fingerprintForEncryptedMessage(encrypted);
+          const cached = decryptedCache.get(messageDoc.id);
+          if (cached && cached.fingerprint === fingerprint) {
+            return { id: messageDoc.id, ...data, text: cached.text };
+          }
 
-        try {
-          if (!data.encrypted) return { id: messageDoc.id, ...data, text: data.text || '' };
-          const text = await decryptMessage(data.encrypted, sharedSecret);
-          decryptedCache.set(messageDoc.id, { fingerprint, text });
-          return {
-            id: messageDoc.id,
-            ...data,
-            text,
-          };
-        } catch {
-          return { id: messageDoc.id, ...data, text: 'Unable to decrypt message.' };
-        }
-      }),
-    );
-    onMessages(messages);
-  });
+          try {
+            if (!data.encrypted) return { id: messageDoc.id, ...data, text: data.text || '' };
+            const text = await decryptMessage(data.encrypted, sharedSecret);
+            decryptedCache.set(messageDoc.id, { fingerprint, text });
+            return {
+              id: messageDoc.id,
+              ...data,
+              text,
+            };
+          } catch {
+            return { id: messageDoc.id, ...data, text: 'Unable to decrypt message.' };
+          }
+        }),
+      );
+      onMessages(messages);
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export async function sendEncryptedMessage({ coupleId, sharedSecret, senderId, text, selfDestructAt = null }) {
@@ -80,21 +86,28 @@ export async function sendEncryptedMessage({ coupleId, sharedSecret, senderId, t
     throw new Error(`Message is too long. Max ${CHAT_LIMITS.maxMessageLength} characters.`);
   }
 
-  return addDoc(pathFor(coupleId, 'messages'), {
+  const payload = {
     encrypted: await encryptMessage(content, sharedSecret),
+    clientNonce: crypto.randomUUID(),
     senderId,
     createdAt: serverTimestamp(),
     seenBy: [senderId],
     seenAtBy: { [senderId]: serverTimestamp() },
     reactions: [],
-    selfDestructAt,
     type: 'text',
-  });
+  };
+
+  if (selfDestructAt) {
+    payload.selfDestructAt = selfDestructAt;
+  }
+
+  return addDoc(pathFor(coupleId, 'messages'), payload);
 }
 
 export async function sendMediaMessage({ coupleId, senderId, mediaUrl, mediaType = 'image', caption = '' }) {
   if (!firebaseEnabled) return null;
   return addDoc(pathFor(coupleId, 'messages'), {
+    clientNonce: crypto.randomUUID(),
     senderId,
     mediaUrl,
     caption: String(caption || '').slice(0, CHAT_LIMITS.maxMessageLength),

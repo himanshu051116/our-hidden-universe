@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, hasCustomAccessCode } = useAuth();
+  const { login } = useAuth();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ email: '', password: '', accessCode: '' });
   const [error, setError] = useState('');
@@ -40,13 +40,8 @@ export default function Login() {
         </p>
         <h1 className="mt-2 font-display text-4xl text-white">Enter your hidden universe</h1>
         <p className="mt-2 text-sm text-pink-100/80">
-          Email + password + shared secret code.
+          Create a private couple room or join one using the shared couple code.
         </p>
-        {!hasCustomAccessCode ? (
-          <p className="mt-2 rounded-xl border border-roseGold/30 bg-roseGold/10 px-3 py-2 text-xs text-roseGold">
-            Local demo code: <span className="font-semibold text-blush">forever-us</span>
-          </p>
-        ) : null}
 
         <div className="mt-4 flex rounded-full bg-black/35 p-1">
           <button
@@ -54,14 +49,14 @@ export default function Login() {
             onClick={() => setMode('login')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'login' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
-            Sign in
+            Join room
           </button>
           <button
             type="button"
             onClick={() => setMode('signup')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'signup' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
-            Create account
+            Create room
           </button>
         </div>
 
@@ -79,6 +74,9 @@ export default function Login() {
               className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
               placeholder="you@love.com"
             />
+            {mode === 'login' ? (
+              <p className="mt-1 text-[11px] text-pink-100/60">Use your own email. If it is new, we will create your partner account in this room.</p>
+            ) : null}
           </label>
 
           <label className="block">
@@ -100,16 +98,19 @@ export default function Login() {
           <label className="block">
             <span className="mb-1 inline-flex items-center gap-2 text-xs text-pink-100/80">
               <KeyRound size={12} />
-              Couple secret code
+              {mode === 'signup' ? 'Couple code (optional)' : 'Couple code'}
             </span>
             <input
               type="text"
-              required
+              required={mode !== 'signup'}
               value={form.accessCode}
               onChange={(event) => setForm((previous) => ({ ...previous, accessCode: event.target.value }))}
               className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
-              placeholder="Shared private code"
+              placeholder={mode === 'signup' ? 'Leave blank to generate one' : 'Enter the code your partner shared'}
             />
+            {mode === 'signup' ? (
+              <p className="mt-1 text-[11px] text-pink-100/60">If you leave this blank, we will generate a unique code for you.</p>
+            ) : null}
           </label>
 
           {error ? <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p> : null}
@@ -119,7 +120,7 @@ export default function Login() {
             disabled={busy}
             className="w-full rounded-full bg-gradient-to-r from-blush to-roseGold px-5 py-3 text-sm font-semibold text-midnight transition hover:brightness-105 disabled:opacity-70"
           >
-            {busy ? 'Verifying...' : mode === 'login' ? 'Open Universe' : 'Create Universe Access'}
+            {busy ? 'Working...' : mode === 'login' ? 'Join Room' : 'Create Room'}
           </button>
         </form>
 

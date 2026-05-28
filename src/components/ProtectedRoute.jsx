@@ -1,8 +1,9 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { firebaseEnabled } from '../services/firebase.js';
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, coupleCode } = useAuth();
 
   if (loading) {
     return (
@@ -15,5 +16,8 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  return user ? children : <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (firebaseEnabled && !coupleCode) return <Navigate to="/login" replace />;
+
+  return children;
 }

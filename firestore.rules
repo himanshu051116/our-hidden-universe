@@ -2,8 +2,136 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomExists(coupleId) {
+      return exists(/databases/$(database)/documents/couples/$(coupleId));
+    }
+
+    function roomExistsAfterWrite(coupleId) {
+      return getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.code == coupleId;
+    }
+
+    function coupleMember(coupleId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/couples/$(coupleId)/members/$(request.auth.uid));
+    }
+
+    function validSeenState() {
+      return request.resource.data.seenBy is list
+        && request.resource.data.seenAtBy is map
+        && request.resource.data.seenBy.hasAny([request.auth.uid]);
+    }
+
+    function validEncryptedPayload() {
+      return request.resource.data.encrypted is map
+        && request.resource.data.encrypted.keys().hasAll(['cipherText', 'iv', 'salt', 'algorithm', 'integrity'])
+        && request.resource.data.encrypted.cipherText is string
+        && request.resource.data.encrypted.iv is string
+        && request.resource.data.encrypted.salt is string
+        && request.resource.data.encrypted.integrity is string
+        && request.resource.data.encrypted.algorithm == 'AES-GCM/PBKDF2-SHA256';
+    }
+
+    function validTextMessageCreate() {
+      return request.resource.data.keys().hasOnly([
+          'encrypted',
+          'senderId',
+          'createdAt',
+          'seenBy',
+          'seenAtBy',
+          'reactions',
+          'selfDestructAt',
+          'type',
+          'clientNonce'
+        ])
+        && request.resource.data.type == 'text'
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.reactions is list
+        && request.resource.data.clientNonce is string
+        && validSeenState()
+        && validEncryptedPayload()
+        && (
+          !request.resource.data.keys().hasAny(['selfDestructAt'])
+          || request.resource.data.selfDestructAt is string
+        );
+    }
+
+    function validMediaMessageCreate() {
+      return request.resource.data.keys().hasOnly([
+          'senderId',
+          'mediaUrl',
+          'caption',
+          'createdAt',
+          'seenBy',
+          'seenAtBy',
+          'reactions',
+          'type',
+          'clientNonce'
+        ])
+        && (request.resource.data.type == 'image' || request.resource.data.type == 'voice')
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.clientNonce is string
+        && request.resource.data.mediaUrl is string
+        && request.resource.data.mediaUrl.matches('^https://.*')
+        && (
+          !request.resource.data.keys().hasAny(['caption'])
+          || (
+            request.resource.data.caption is string
+            && request.resource.data.caption.size() <= 2000
+          )
+        )
+        && request.resource.data.reactions is list
+        && validSeenState();
+    }
+
+    function validMessageUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.createdAt == resource.data.createdAt
+        && changed.hasOnly(['seenBy', 'seenAtBy', 'reactions']);
+    }
+
+    match /couples/{coupleId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['code', 'displayCode', 'createdBy', 'createdAt', 'updatedAt'])
+        && request.resource.data.code == coupleId
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if coupleMember(coupleId);
+
+      match /members/{userId} {
+        allow get: if signedIn() && (request.auth.uid == userId || coupleMember(coupleId));
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && (roomExists(coupleId) || roomExistsAfterWrite(coupleId))
+          && request.resource.data.keys().hasOnly(['joinedAt', 'role', 'lastActiveAt', 'isTyping', 'displayName']);
+        allow update: if signedIn() && request.auth.uid == userId && (roomExists(coupleId) || coupleMember(coupleId));
+        allow delete: if coupleMember(coupleId) || (signedIn() && request.auth.uid == userId);
+      }
+
+      match /messages/{messageId} {
+        allow read: if coupleMember(coupleId);
+        allow create: if coupleMember(coupleId) && (validTextMessageCreate() || validMediaMessageCreate());
+        allow update: if coupleMember(coupleId) && validMessageUpdate();
+        allow delete: if coupleMember(coupleId);
+      }
+
+      match /memories/{memoryId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /openWhen/{letterId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /bucketList/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
     }
   }
 }
