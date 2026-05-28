@@ -1,12 +1,43 @@
 import { motion } from 'framer-motion';
-import { Heart, MessageCircleHeart, Timer } from 'lucide-react';
+import { Heart, LockKeyhole, MessageCircleHeart, Timer, X } from 'lucide-react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
+const sunSecretPassword = 'jaan';
+const sunSurpriseImage = '/secret-sun-surprise.jpeg';
+
 export default function UniverseHome() {
+  const [sunSecretOpen, setSunSecretOpen] = useState(false);
+  const [sunSecretUnlocked, setSunSecretUnlocked] = useState(false);
+  const [sunPassword, setSunPassword] = useState('');
+  const [sunError, setSunError] = useState('');
+
+  function openSunSecret() {
+    setSunSecretOpen(true);
+    setSunError('');
+  }
+
+  function unlockSunSecret(event) {
+    event.preventDefault();
+    if (sunPassword.trim().toLowerCase() !== sunSecretPassword) {
+      setSunError('That is not the secret word yet.');
+      return;
+    }
+    setSunSecretUnlocked(true);
+    setSunError('');
+  }
+
+  function closeSunSecret() {
+    setSunSecretOpen(false);
+    setSunSecretUnlocked(false);
+    setSunPassword('');
+    setSunError('');
+  }
+
   return (
     <div className="space-y-5">
       <section className="glass relative min-h-[380px] overflow-hidden rounded-3xl p-5 sm:p-8">
-        <SolarSystemBackground />
+        <SolarSystemBackground onSunSecretClick={openSunSecret} active={sunSecretOpen} />
         <div className="relative z-10 max-w-2xl">
           <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Home</p>
           <h2 className="mt-2 max-w-2xl font-display text-4xl text-white sm:text-5xl">
@@ -27,6 +58,66 @@ export default function UniverseHome() {
         <QuickLink to="/universe/timeline" icon={<Timer size={16} />} title="Memory Timeline" text="Keep your shared milestones and photos in one place." />
         <QuickLink to="/universe/open-when" icon={<Heart size={16} />} title="Open When" text="Emotional comfort vault for every kind of day." />
       </section>
+
+      {sunSecretOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 px-4 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="glass relative w-full max-w-lg rounded-3xl p-5 sm:p-6"
+          >
+            <button
+              type="button"
+              onClick={closeSunSecret}
+              className="absolute right-4 top-4 rounded-full border border-white/15 p-2 text-pink-100 transition hover:border-blush/70 hover:text-white"
+              aria-label="Close secret"
+            >
+              <X size={16} />
+            </button>
+
+            {!sunSecretUnlocked ? (
+              <form onSubmit={unlockSunSecret} className="pr-8">
+                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-roseGold">
+                  <LockKeyhole size={13} />
+                  Sun secret
+                </p>
+                <h3 className="mt-2 font-display text-3xl text-white">A hidden heart is awake</h3>
+                <p className="mt-2 text-sm text-pink-100/75">Enter the secret password to open what the sun is holding.</p>
+
+                <input
+                  type="password"
+                  autoFocus
+                  value={sunPassword}
+                  onChange={(event) => {
+                    setSunPassword(event.target.value);
+                    setSunError('');
+                  }}
+                  className="mt-5 w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
+                  placeholder="Password"
+                />
+                {sunError ? <p className="mt-2 text-xs text-red-200">{sunError}</p> : null}
+
+                <button
+                  type="submit"
+                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 py-2.5 text-sm font-semibold text-midnight transition hover:brightness-105"
+                >
+                  <Heart size={15} />
+                  Unlock
+                </button>
+              </form>
+            ) : (
+              <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/35">
+                <div className="relative">
+                  <img src={sunSurpriseImage} alt="Forever yours Jaan" className="max-h-[70vh] w-full object-contain" />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-5 pb-5 pt-16 text-center">
+                    <p className="font-display text-4xl text-white drop-shadow sm:text-5xl">Forever yours Jaan</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -43,7 +134,7 @@ function QuickLink({ to, icon, title, text }) {
   );
 }
 
-function SolarSystemBackground() {
+function SolarSystemBackground({ onSunSecretClick, active }) {
   const orbitColor = 'rgba(255, 182, 200, 0.55)';
   const orbitSoft = 'rgba(255, 182, 200, 0.22)';
 
@@ -75,6 +166,24 @@ function SolarSystemBackground() {
         <div className="absolute inset-[15%] rounded-full border border-white/10" />
 
         <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_35%_35%,#fff6bc_6%,#ffd76a_35%,#ff9f2f_68%,#f16b1f_100%)] shadow-[0_0_55px_rgba(255,170,80,.8)]" />
+        <button
+          type="button"
+          onClick={onSunSecretClick}
+          className="pointer-events-auto absolute left-1/2 top-1/2 z-20 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-blush opacity-0 outline-none transition focus-visible:opacity-100"
+          aria-label="Open hidden sun heart"
+        >
+          <Heart size={28} fill="currentColor" />
+        </button>
+        {active ? (
+          <motion.div
+            className="absolute left-1/2 top-1/2 z-10 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-blush"
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: [1, 1.12, 1] }}
+            transition={{ duration: 1.1, repeat: Infinity }}
+          >
+            <Heart size={28} fill="currentColor" />
+          </motion.div>
+        ) : null}
 
         <motion.div
           className="absolute inset-0"

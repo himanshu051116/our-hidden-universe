@@ -2,7 +2,7 @@ import { AnimatePresence } from 'framer-motion';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import StarField from './components/StarField.jsx';
-import BirthdaySurprise from './pages/BirthdaySurprise.jsx';
+import BirthdaySurprise, { BirthdaySurpriseEditor } from './pages/BirthdaySurprise.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Universe from './pages/Universe.jsx';
@@ -42,6 +42,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <BirthdaySurprise />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/birthday-surprise/edit"
+            element={
+              <ProtectedRoute>
+                <BirthdaySurpriseEditor />
               </ProtectedRoute>
             }
           />

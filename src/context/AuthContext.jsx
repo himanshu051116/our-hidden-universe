@@ -36,6 +36,27 @@ function isMissingAccountError(error) {
   return error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential';
 }
 
+async function signInOrCreateUser(email, password) {
+  try {
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    return { credential, created: false };
+  } catch (error) {
+    if (!isMissingAccountError(error)) {
+      throw error;
+    }
+
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      return { credential, created: true };
+    } catch (createError) {
+      if (createError?.code === 'auth/email-already-in-use') {
+        throw new Error('That email already has an account. Check the password, then try again.');
+      }
+      throw createError;
+    }
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => (localStorage.getItem('ohu-demo-session') ? demoUser : null));
   const [coupleCode, setCoupleCode] = useState(() => localStorage.getItem(roomStorageKey) || '');
@@ -62,7 +83,7 @@ export function AuthProvider({ children }) {
     const requestedCode = normalizeCoupleCode(accessCode);
 
     if (mode === 'signup') {
-      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      const { credential, created } = await signInOrCreateUser(email, password);
       const roomCode = requestedCode || normalizeCoupleCode(generateCoupleCode());
       const roomRef = doc(db, 'couples', roomCode);
       const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
@@ -88,6 +109,9 @@ export function AuthProvider({ children }) {
           });
         });
       } catch (error) {
+        if (created) {
+          await deleteUser(credential.user);
+        }
         await signOut(auth);
         throw error;
       }
@@ -103,29 +127,24 @@ export function AuthProvider({ children }) {
       throw new Error('Enter the couple code your partner shared with you.');
     }
 
-    let credential;
-    let createdAccount = false;
+    const { credential, created } = await signInOrCreateUser(email, password);
+    const roomRef = doc(db, 'couples', roomCode);
+    let roomSnapshot;
     try {
-      credential = await signInWithEmailAndPassword(auth, email, password);
+      roomSnapshot = await getDoc(roomRef);
     } catch (error) {
-      if (!isMissingAccountError(error)) {
-        throw error;
+      if (created) {
+        await deleteUser(credential.user);
       }
-      try {
-        credential = await createUserWithEmailAndPassword(auth, email, password);
-      } catch (createError) {
-        if (createError?.code === 'auth/email-already-in-use') {
-          throw new Error('That email already has an account. Check the password, then join the room again.');
-        }
-        throw createError;
-      }
-      createdAccount = true;
+      await signOut(auth);
+      throw new Error(
+        error?.message ||
+          'Unable to check the couple room. Make sure the Firestore database exists and rules are deployed.',
+      );
     }
 
-    const roomRef = doc(db, 'couples', roomCode);
-    const roomSnapshot = await getDoc(roomRef);
     if (!roomSnapshot.exists()) {
-      if (createdAccount) {
+      if (created) {
         await deleteUser(credential.user);
       }
       await signOut(auth);

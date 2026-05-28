@@ -41,6 +41,32 @@ function dataUrlFromFile(file) {
   });
 }
 
+function compressedImageDataUrlFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const maxSide = 1280;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Unable to prepare this image.'));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
 function attachmentValidationError(file) {
   if (!file) return '';
   if (!file.type.startsWith('image/') && !file.type.startsWith('audio/')) {
@@ -176,7 +202,7 @@ export default function ChatPanel({ onMessageCountChange }) {
 
     try {
       if (firebaseEnabled) {
-        if (cleanDraft) {
+        if (cleanDraft && !attachment) {
           await sendEncryptedMessage({
             coupleId,
             sharedSecret,
@@ -186,7 +212,9 @@ export default function ChatPanel({ onMessageCountChange }) {
           });
         }
         if (attachment) {
-          const mediaUrl = await uploadChatFile(coupleId, user.uid, attachment);
+          const mediaUrl = attachment.type.startsWith('image/')
+            ? await compressedImageDataUrlFromFile(attachment)
+            : await uploadChatFile(coupleId, user.uid, attachment);
           if (mediaUrl) {
             const mediaType = attachment.type.startsWith('audio') ? 'voice' : 'image';
             await sendMediaMessage({

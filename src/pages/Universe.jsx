@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
-import { Cake, Copy, DatabaseZap, LogOut, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { Cake, Copy, DatabaseZap, Heart, Home, ListTodo, LogOut, MessageCircleHeart, Pencil, Sparkles, CalendarClock } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -23,6 +23,22 @@ export default function Universe() {
   const [resetVersion, setResetVersion] = useState(0);
   const [resetStatus, setResetStatus] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
+  const [navVisible, setNavVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    lastScrollYRef.current = window.scrollY;
+    function onScroll() {
+      const currentY = window.scrollY;
+      const delta = currentY - lastScrollYRef.current;
+      if (Math.abs(delta) < 8) return;
+      setNavVisible(delta < 0 || currentY < 40);
+      lastScrollYRef.current = currentY;
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   async function onResetData() {
     const confirmed = window.confirm('Clear all couple data for this universe? This removes chat records and saved entries.');
@@ -59,7 +75,7 @@ export default function Universe() {
   }
 
   return (
-    <PageShell className="px-4 pb-12 pt-6 sm:px-8">
+    <PageShell className="px-4 pb-28 pt-6 sm:px-8">
       <div className="mx-auto w-full max-w-6xl">
         <header className="glass mb-5 rounded-3xl px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
@@ -79,32 +95,6 @@ export default function Universe() {
                   {coupleCodeDisplay}
                 </button>
               ) : null}
-              <UniverseNavLink to="/universe/home">Home</UniverseNavLink>
-              <UniverseNavLink to="/universe/chat">Chat</UniverseNavLink>
-              <UniverseNavLink to="/universe/timeline">Timeline</UniverseNavLink>
-              <UniverseNavLink to="/universe/open-when">Open When</UniverseNavLink>
-              <UniverseNavLink to="/universe/extras">Extras</UniverseNavLink>
-              <Link to="/birthday-surprise" className="inline-flex items-center gap-2 rounded-full border border-roseGold/60 px-3 py-2 text-xs text-roseGold transition hover:bg-roseGold/10">
-                <Cake size={13} />
-                Surprise
-              </Link>
-              <button
-                type="button"
-                onClick={logout}
-                className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-xs text-pink-100 transition hover:bg-white/20"
-              >
-                <LogOut size={13} />
-                Logout
-              </button>
-              <button
-                type="button"
-                onClick={onResetData}
-                disabled={resetBusy}
-                className="inline-flex items-center gap-2 rounded-full border border-roseGold/60 bg-roseGold/10 px-3 py-2 text-xs text-roseGold transition hover:bg-roseGold/20 disabled:opacity-60"
-              >
-                <DatabaseZap size={13} />
-                {resetBusy ? 'Clearing...' : 'Clear Data'}
-              </button>
             </div>
           </div>
         </header>
@@ -134,23 +124,87 @@ export default function Universe() {
 
         <Outlet context={{ messageCount, setMessageCount, resetVersion }} />
       </div>
+      <BottomNav
+        visible={navVisible}
+        logout={logout}
+        onResetData={onResetData}
+        resetBusy={resetBusy}
+      />
     </PageShell>
   );
 }
 
-function UniverseNavLink({ to, children }) {
+function BottomNav({ visible, logout, onResetData, resetBusy }) {
+  return (
+    <motion.nav
+      initial={false}
+      animate={{ y: visible ? 0 : 120, opacity: visible ? 1 : 0 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 py-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
+    >
+      <div className="mx-auto flex max-w-5xl items-center justify-around gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+        <BottomNavLink to="/universe/home" icon={<Home size={19} />} label="Home" />
+        <BottomNavLink to="/universe/chat" icon={<MessageCircleHeart size={19} />} label="Chat" />
+        <BottomNavLink to="/universe/timeline" icon={<CalendarClock size={19} />} label="Timeline" />
+        <BottomNavLink to="/universe/open-when" icon={<Heart size={19} />} label="Open" />
+        <BottomNavLink to="/universe/extras" icon={<ListTodo size={19} />} label="Extras" />
+        <BottomActionLink to="/birthday-surprise" icon={<Cake size={19} />} label="Surprise" accent />
+        <BottomActionLink to="/birthday-surprise/edit" icon={<Pencil size={19} />} label="Edit" />
+        <BottomButton icon={<LogOut size={19} />} label="Logout" onClick={logout} />
+        <BottomButton icon={<DatabaseZap size={19} />} label={resetBusy ? 'Clearing' : 'Clear'} onClick={onResetData} disabled={resetBusy} accent />
+      </div>
+    </motion.nav>
+  );
+}
+
+function BottomNavLink({ to, icon, label }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `rounded-full border px-3 py-2 text-xs transition ${
+        `flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition ${
           isActive
             ? 'border-blush/70 bg-blush/20 text-white'
             : 'border-white/15 text-pink-100 hover:border-blush/70'
         }`
       }
     >
-      {children}
+      {icon}
+      <span>{label}</span>
     </NavLink>
+  );
+}
+
+function BottomActionLink({ to, icon, label, accent = false }) {
+  return (
+    <Link
+      to={to}
+      className={`flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition ${
+        accent
+          ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
+          : 'border-white/15 text-pink-100 hover:border-blush/70'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function BottomButton({ icon, label, onClick, disabled = false, accent = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition disabled:opacity-60 ${
+        accent
+          ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
+          : 'border-white/15 text-pink-100 hover:border-blush/70'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }

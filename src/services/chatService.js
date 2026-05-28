@@ -21,6 +21,15 @@ export const CHAT_LIMITS = {
 
 const pathFor = (coupleId, segment) => collection(db, 'couples', coupleId, segment);
 
+function withTimeout(promise, milliseconds, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), milliseconds);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
 function fingerprintForEncryptedMessage(encrypted = {}) {
   const cipher = encrypted.cipherText || '';
   const iv = encrypted.iv || '';
@@ -131,8 +140,12 @@ export async function uploadChatFile(coupleId, senderId, file) {
   const extension = file.name.split('.').pop();
   const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const objectRef = ref(storage, `couples/${coupleId}/messages/${senderId}/${key}.${extension}`);
-  await uploadBytes(objectRef, file, { contentType: file.type });
-  return getDownloadURL(objectRef);
+  await withTimeout(
+    uploadBytes(objectRef, file, { contentType: file.type }),
+    30000,
+    'Upload is taking too long. Firebase Storage may not be enabled for this project.',
+  );
+  return withTimeout(getDownloadURL(objectRef), 10000, 'Unable to get the uploaded file URL.');
 }
 
 export async function setTyping(coupleId, userId, isTyping) {

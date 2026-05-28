@@ -21,11 +21,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
 };
 
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || 'default';
+
 export const firebaseEnabled = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 export const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
-export const db = app ? getFirestore(app) : null;
+export const db = app ? getFirestore(app, firestoreDatabaseId) : null;
 export const storage = app ? getStorage(app) : null;
 
 if (auth) {

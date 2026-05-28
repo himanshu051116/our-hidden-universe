@@ -74,7 +74,10 @@ service cloud.firestore {
         && request.resource.data.senderId == request.auth.uid
         && request.resource.data.clientNonce is string
         && request.resource.data.mediaUrl is string
-        && request.resource.data.mediaUrl.matches('^https://.*')
+        && (
+          request.resource.data.mediaUrl.matches('^https://.*')
+          || request.resource.data.mediaUrl.matches('^data:image/(jpeg|jpg|png|webp|gif);base64,.*')
+        )
         && (
           !request.resource.data.keys().hasAny(['caption'])
           || (
