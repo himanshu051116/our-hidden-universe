@@ -75,15 +75,15 @@ export default function Universe() {
   }
 
   return (
-    <PageShell className="px-4 pb-28 pt-6 sm:px-8">
+    <PageShell className="px-4 pb-32 pt-5 sm:px-8 sm:pb-28 sm:pt-6">
       <div className="mx-auto w-full max-w-6xl">
         <header className="glass mb-5 rounded-3xl px-4 py-4 sm:px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="min-w-0">
               <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Our Hidden Universe</p>
-              <h1 className="font-display text-3xl text-white sm:text-4xl">Private space for your love story</h1>
+              <h1 className="mt-1 font-display text-[2rem] leading-tight text-white sm:text-4xl">Private space for your love story</h1>
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
               {coupleCodeDisplay ? (
                 <button
                   type="button"
@@ -140,9 +140,9 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
       initial={false}
       animate={{ y: visible ? 0 : 120, opacity: visible ? 1 : 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 py-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
     >
-      <div className="mx-auto flex max-w-5xl items-center justify-around gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+      <div className="mx-auto flex max-w-5xl snap-x items-stretch gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 px-2 py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <BottomNavLink to="/universe/home" icon={<Home size={19} />} label="Home" />
         <BottomNavLink to="/universe/chat" icon={<MessageCircleHeart size={19} />} label="Chat" />
         <BottomNavLink to="/universe/timeline" icon={<CalendarClock size={19} />} label="Timeline" />
@@ -162,7 +162,7 @@ function BottomNavLink({ to, icon, label }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition ${
+        `flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
           isActive
             ? 'border-blush/70 bg-blush/20 text-white'
             : 'border-white/15 text-pink-100 hover:border-blush/70'
@@ -179,7 +179,7 @@ function BottomActionLink({ to, icon, label, accent = false }) {
   return (
     <Link
       to={to}
-      className={`flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition ${
+      className={`flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
         accent
           ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
           : 'border-white/15 text-pink-100 hover:border-blush/70'
@@ -197,7 +197,7 @@ function BottomButton({ icon, label, onClick, disabled = false, accent = false }
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex min-w-[68px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] transition disabled:opacity-60 ${
+      className={`flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition disabled:opacity-60 sm:min-w-[76px] ${
         accent
           ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
           : 'border-white/15 text-pink-100 hover:border-blush/70'
