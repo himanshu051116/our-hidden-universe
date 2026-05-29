@@ -1,6 +1,8 @@
-import { CalendarClock, CheckCircle2, ListTodo, Music, Sparkle, Target } from 'lucide-react';
+import { BookOpen, CalendarClock, CheckCircle2, ListTodo, Music, Sparkle, Target } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../context/AuthContext.jsx';
 import { bucketListSeed, demoPlaylist, dreamBoardSeed, quotePool } from '../data/demoData.js';
+import { loadLocalReadTogether, saveReadTogether, subscribeReadTogether } from '../services/coupleDashboardService.js';
 import { remainingCountdown } from '../utils/date.js';
 import SectionTitle from './SectionTitle.jsx';
 
@@ -47,6 +49,7 @@ function loadExtrasState() {
 }
 
 export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
+  const { user, coupleId } = useAuth();
   const initialState = useMemo(() => loadExtrasState(), []);
   const [meetingDate, setMeetingDate] = useState(initialState.meetingDate);
   const [now, setNow] = useState(Date.now());
@@ -55,6 +58,8 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
   const [bucketList, setBucketList] = useState(initialState.bucketList);
   const [quote, setQuote] = useState(initialState.quote);
   const [relationshipStart, setRelationshipStart] = useState(initialState.relationshipStart);
+  const [readTogether, setReadTogether] = useState(() => loadLocalReadTogether());
+  const [readSaveState, setReadSaveState] = useState('');
 
   const countdown = meetingDate ? remainingCountdown(meetingDate, now) : null;
   const daysTogether = useMemo(() => {
@@ -76,6 +81,24 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeReadTogether(coupleId, (state) => {
+      const selfProgress = state.progressByUser?.[user?.uid] || {};
+      const partnerProgress = Object.entries(state.progressByUser || {}).find(([uid]) => uid !== user?.uid)?.[1] || {};
+      setReadTogether({
+        title: state.title || '',
+        link: state.link || '',
+        selfChapter: selfProgress.chapter || '',
+        selfPage: selfProgress.page || '',
+        partnerChapter: partnerProgress.chapter || '',
+        partnerPage: partnerProgress.page || '',
+        partnerName: partnerProgress.displayName || 'Partner',
+        progressByUser: state.progressByUser || {},
+      });
+    });
+    return () => unsubscribe?.();
+  }, [coupleId, user?.uid]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -110,6 +133,13 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
     event.currentTarget.reset();
   }
 
+  async function onSaveReading(event) {
+    event.preventDefault();
+    await saveReadTogether(coupleId, user, readTogether);
+    setReadSaveState('Progress saved');
+    window.setTimeout(() => setReadSaveState(''), 1600);
+  }
+
   return (
     <section id="extras" className="glass rounded-3xl p-4 sm:p-6">
       <SectionTitle
@@ -119,6 +149,58 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <article id="read-together" className="scroll-mt-24 rounded-2xl border border-blush/25 bg-blush/10 p-4 lg:col-span-2">
+          <p className="inline-flex items-center gap-2 text-sm text-roseGold">
+            <BookOpen size={14} />
+            Read Manga / Manhwa Together
+          </p>
+          <form onSubmit={onSaveReading} className="mt-4 grid gap-3 md:grid-cols-2">
+            <input
+              value={readTogether.title}
+              onChange={(event) => setReadTogether((previous) => ({ ...previous, title: event.target.value }))}
+              placeholder="Series title"
+              className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+            />
+            <input
+              value={readTogether.link}
+              onChange={(event) => setReadTogether((previous) => ({ ...previous, link: event.target.value }))}
+              placeholder="Reading link"
+              className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+            />
+            <input
+              value={readTogether.selfChapter}
+              onChange={(event) => setReadTogether((previous) => ({ ...previous, selfChapter: event.target.value }))}
+              placeholder="My chapter"
+              className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+            />
+            <input
+              value={readTogether.selfPage}
+              onChange={(event) => setReadTogether((previous) => ({ ...previous, selfPage: event.target.value }))}
+              placeholder="My page / episode"
+              className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+            />
+            <div className="rounded-2xl border border-white/10 bg-black/35 p-4 md:col-span-2">
+              <p className="text-xs uppercase tracking-[0.16em] text-roseGold">Partner Progress</p>
+              <p className="mt-2 text-sm text-pink-100">
+                {readTogether.partnerChapter || readTogether.partnerPage
+                  ? `${readTogether.partnerName || 'Partner'} is at chapter ${readTogether.partnerChapter || '--'}, page ${readTogether.partnerPage || '--'}`
+                  : 'No partner progress yet.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+              {readTogether.link ? (
+                <a href={readTogether.link} target="_blank" rel="noreferrer" className="rounded-full border border-white/15 px-4 py-2 text-xs text-pink-100 transition hover:border-blush/70">
+                  Open series
+                </a>
+              ) : null}
+              <button type="submit" className="rounded-full bg-gradient-to-r from-blush to-roseGold px-5 py-2 text-xs font-semibold text-midnight transition hover:brightness-105">
+                Save progress
+              </button>
+              {readSaveState ? <span className="text-xs text-blush">{readSaveState}</span> : null}
+            </div>
+          </form>
+        </article>
+
         <article className="rounded-2xl border border-white/10 bg-black/35 p-4">
           <p className="inline-flex items-center gap-2 text-sm text-roseGold">
             <CalendarClock size={14} />

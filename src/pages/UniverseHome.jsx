@@ -1,16 +1,65 @@
 import { motion } from 'framer-motion';
-import { Heart, LockKeyhole, MessageCircleHeart, Timer, X } from 'lucide-react';
-import { useState } from 'react';
+import { CalendarHeart, CheckCheck, Copy, Heart, Images, KeyRound, LockKeyhole, MessageCircleHeart, Radio, ShieldCheck, Stars, Timer, UserRoundCheck, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import { loadLocalProfile, saveLocalProfile, subscribeCoupleMembers, touchMemberPresence } from '../services/coupleDashboardService.js';
+import { firebaseEnabled } from '../services/firebase.js';
+import { formatDate } from '../utils/date.js';
 
 const sunSecretPassword = 'jaan';
 const sunSurpriseImage = '/secret-sun-surprise.jpeg';
+const memoriesKey = 'ohu-memories-v1';
+
+function loadMemories() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(memoriesKey) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function daysSince(date) {
+  if (!date) return null;
+  const time = new Date(date).getTime();
+  if (Number.isNaN(time)) return null;
+  return Math.max(0, Math.floor((Date.now() - time) / 86400000));
+}
+
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') return value.toDate();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getPartnerStatus(members, userId) {
+  const partner = members.find((member) => member.id !== userId);
+  if (!partner) return { label: firebaseEnabled ? 'Waiting' : 'Preview', online: false, detail: 'Partner has not opened the room yet' };
+  const lastActive = toDate(partner.lastActiveAt);
+  const online = lastActive ? Date.now() - lastActive.getTime() < 2 * 60 * 1000 : false;
+  return {
+    label: online ? 'Online' : 'Offline',
+    online,
+    detail: lastActive ? `Last active ${lastActive.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Presence not updated yet',
+  };
+}
 
 export default function UniverseHome() {
+  const { user, coupleId, coupleCodeDisplay } = useAuth();
   const [sunSecretOpen, setSunSecretOpen] = useState(false);
   const [sunSecretUnlocked, setSunSecretUnlocked] = useState(false);
   const [sunPassword, setSunPassword] = useState('');
   const [sunError, setSunError] = useState('');
+  const [profile, setProfile] = useState(() => loadLocalProfile());
+  const [members, setMembers] = useState([]);
+  const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const memories = useMemo(() => loadMemories(), []);
+  const recentMemories = useMemo(() => memories.slice(-4).reverse(), [memories]);
+  const togetherDays = daysSince(profile.relationshipStart);
+  const partnerStatus = getPartnerStatus(members, user?.uid);
 
   function openSunSecret() {
     setSunSecretOpen(true);
@@ -34,6 +83,31 @@ export default function UniverseHome() {
     setSunError('');
   }
 
+  useEffect(() => {
+    saveLocalProfile(profile);
+  }, [profile]);
+
+  useEffect(() => {
+    const unsubscribeMembers = subscribeCoupleMembers(coupleId, setMembers);
+    touchMemberPresence(coupleId, user);
+    const presenceTimer = window.setInterval(() => {
+      setNow(Date.now());
+      touchMemberPresence(coupleId, user);
+    }, 45000);
+
+    return () => {
+      unsubscribeMembers?.();
+      window.clearInterval(presenceTimer);
+    };
+  }, [coupleId, user]);
+
+  async function copyCoupleCode() {
+    if (!coupleCodeDisplay) return;
+    await navigator.clipboard.writeText(coupleCodeDisplay);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
   return (
     <div className="space-y-5">
       <section className="glass relative min-h-[560px] overflow-hidden rounded-3xl p-5 sm:min-h-[430px] sm:p-8">
@@ -53,10 +127,100 @@ export default function UniverseHome() {
         </div>
       </section>
 
+      <section className="grid gap-4 xl:grid-cols-[1fr_.85fr]">
+        <article className="glass rounded-3xl p-4 sm:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold">
+                <ShieldCheck size={14} />
+                Couple Room
+              </p>
+              <h3 className="mt-2 font-display text-3xl text-white">{profile.coupleName || 'Our Hidden Universe'}</h3>
+              <p className="mt-2 text-sm leading-6 text-pink-100/75">
+                Room is {coupleCodeDisplay ? 'validated with your couple code' : 'waiting for a couple code'}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={copyCoupleCode}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-blush/45 bg-blush/10 px-4 text-sm text-blush transition hover:bg-blush/20"
+            >
+              <Copy size={15} />
+              {copied ? 'Copied' : coupleCodeDisplay || 'No code'}
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <label className="rounded-2xl border border-white/10 bg-black/35 p-4">
+              <span className="text-xs uppercase tracking-[0.16em] text-roseGold">Couple Nickname</span>
+              <input
+                value={profile.coupleName}
+                onChange={(event) => setProfile((previous) => ({ ...previous, coupleName: event.target.value }))}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+                placeholder="Your couple nickname"
+              />
+            </label>
+            <label className="rounded-2xl border border-white/10 bg-black/35 p-4">
+              <span className="text-xs uppercase tracking-[0.16em] text-roseGold">Relationship Start Date</span>
+              <input
+                type="date"
+                value={profile.relationshipStart}
+                onChange={(event) => setProfile((previous) => ({ ...previous, relationshipStart: event.target.value }))}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <HomeMetric icon={<CalendarHeart size={15} />} label="Days Together" value={togetherDays === null ? '--' : togetherDays} />
+            <HomeMetric icon={<Radio size={15} />} label="Partner" value={partnerStatus.label} helper={`${partnerStatus.detail} at ${new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`} accent={partnerStatus.online} />
+            <HomeMetric icon={<KeyRound size={15} />} label="Code" value={coupleCodeDisplay || '--'} />
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <ValidationPill icon={<UserRoundCheck size={14} />} label={firebaseEnabled ? 'Firebase protected room' : 'Local preview room'} />
+            <ValidationPill icon={<CheckCheck size={14} />} label="Read receipts and typing indicator enabled" />
+          </div>
+        </article>
+
+        <article className="glass rounded-3xl p-4 sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <p className="inline-flex items-center gap-2 text-sm text-roseGold">
+              <Images size={15} />
+              Shared Memory Timeline
+            </p>
+            <Link to="/universe/timeline" className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-pink-100 transition hover:border-blush/70">
+              View all
+            </Link>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {recentMemories.length ? recentMemories.map((memory) => (
+              <Link key={memory.id} to="/universe/timeline" className="group overflow-hidden rounded-2xl border border-white/10 bg-black/35">
+                {memory.mediaUrl && memory.mediaType === 'image' ? (
+                  <img src={memory.mediaUrl} alt={memory.title} className="h-28 w-full object-cover transition group-hover:scale-105" />
+                ) : (
+                  <div className="grid h-28 place-items-center px-3 text-center text-xs text-pink-100/70">
+                    {memory.mediaType === 'voice' ? 'Voice memory' : memory.mediaType === 'video' ? 'Video memory' : 'Note memory'}
+                  </div>
+                )}
+                <div className="px-3 py-2">
+                  <p className="truncate text-xs text-white">{memory.title}</p>
+                  <p className="text-[10px] text-pink-100/55">{memory.date ? formatDate(memory.date) : 'Undated'}</p>
+                </div>
+              </Link>
+            )) : (
+              <Link to="/universe/timeline" className="col-span-2 rounded-2xl border border-dashed border-white/15 bg-black/35 px-4 py-8 text-center text-sm text-pink-100/75">
+                Add your first shared memory
+              </Link>
+            )}
+          </div>
+        </article>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-3">
+        <QuickLink to="/universe/sky" icon={<Stars size={16} />} title="Shared Night Sky" text="Create stars, send heartbeats, moods, and right-now moments." />
         <QuickLink to="/universe/chat" icon={<MessageCircleHeart size={16} />} title="Private Chat" text="Send encrypted notes, voice, and reaction moments." />
         <QuickLink to="/universe/timeline" icon={<Timer size={16} />} title="Memory Timeline" text="Keep your shared milestones and photos in one place." />
-        <QuickLink to="/universe/open-when" icon={<Heart size={16} />} title="Open When" text="Emotional comfort vault for every kind of day." />
       </section>
 
       {sunSecretOpen ? (
@@ -200,6 +364,11 @@ function SolarSystemBackground({ onSunSecretClick, active }) {
             animate={{ scale: [1, 1.12, 1] }}
             transition={{ duration: 2.2, repeat: Infinity }}
           />
+          <Link
+            to="/universe/extras#read-together"
+            className="pointer-events-auto absolute left-[92%] top-1/2 z-30 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-blush/80"
+            aria-label="Open shared manhwa reading"
+          />
         </motion.div>
 
         <div className="absolute right-10 top-1/2 -translate-y-[52px] rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-pink-100/80 sm:right-14">
@@ -210,5 +379,24 @@ function SolarSystemBackground({ onSunSecretClick, active }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function HomeMetric({ icon, label, value, helper = '', accent = false }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
+      <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-roseGold">{icon}{label}</p>
+      <p className={`mt-2 truncate font-display text-2xl leading-none ${accent ? 'text-blush' : 'text-white'}`}>{value}</p>
+      {helper ? <p className="mt-2 text-xs leading-5 text-pink-100/65">{helper}</p> : null}
+    </div>
+  );
+}
+
+function ValidationPill({ icon, label }) {
+  return (
+    <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-xs text-pink-100/75">
+      <span className="text-blush">{icon}</span>
+      {label}
+    </p>
   );
 }

@@ -135,6 +135,38 @@ service cloud.firestore {
       match /bucketList/{itemId} {
         allow read, write: if coupleMember(coupleId);
       }
+
+      match /readTogether/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /skyStars/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /skySignals/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /moodLanterns/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /sleepStates/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /skyStats/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /starTouches/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
+      match /rightNowPhotos/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
     }
   }
 }

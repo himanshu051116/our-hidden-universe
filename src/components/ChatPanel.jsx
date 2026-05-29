@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, CheckCheck, ImagePlus, Mic, Send, ShieldCheck, TimerReset } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCheck, ImagePlus, Mic, Send, ShieldCheck, TimerReset } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
@@ -342,6 +342,17 @@ export default function ChatPanel({ onMessageCountChange }) {
         </p>
       </div>
 
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/35 px-3 py-3 text-xs text-pink-100/80">
+        <span className="inline-flex items-center gap-2">
+          <Activity size={14} className={partnerTyping ? 'text-blush' : 'text-roseGold'} />
+          {partnerTyping ? 'Partner is typing now' : 'Typing indicator ready'}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <CheckCheck size={14} className="text-blush" />
+          Read receipts appear on your sent messages
+        </span>
+      </div>
+
       {notice ? (
         <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold">
           <AlertTriangle size={13} />
@@ -385,7 +396,12 @@ export default function ChatPanel({ onMessageCountChange }) {
 
                   <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-pink-100/70">
                     <span>{createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })} {formatTime(createdAt)}</span>
-                    {own ? <span>{readReceiptForMessage(message, user?.uid)}</span> : null}
+                    {own ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] text-pink-50">
+                        <CheckCheck size={12} />
+                        {readReceiptForMessage(message, user?.uid)}
+                      </span>
+                    ) : null}
                   </div>
 
                   <button
@@ -402,14 +418,24 @@ export default function ChatPanel({ onMessageCountChange }) {
 
           <AnimatePresence>
             {partnerTyping && (
-              <motion.p
+              <motion.div
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 6 }}
-                className="text-xs text-roseGold"
+                className="inline-flex w-fit items-center gap-2 rounded-full border border-blush/30 bg-blush/10 px-3 py-2 text-xs text-blush"
               >
-                Your partner is typing...
-              </motion.p>
+                <span>Your partner is typing</span>
+                <span className="flex gap-1">
+                  {[0, 1, 2].map((dot) => (
+                    <motion.span
+                      key={dot}
+                      className="h-1.5 w-1.5 rounded-full bg-blush"
+                      animate={{ opacity: [0.3, 1, 0.3], y: [0, -2, 0] }}
+                      transition={{ duration: 0.9, repeat: Infinity, delay: dot * 0.14 }}
+                    />
+                  ))}
+                </span>
+              </motion.div>
             )}
           </AnimatePresence>
           <div ref={endRef} />

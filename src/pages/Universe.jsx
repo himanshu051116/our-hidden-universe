@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Cake, Copy, DatabaseZap, Heart, Home, ListTodo, LogOut, MessageCircleHeart, Pencil, Sparkles, CalendarClock } from 'lucide-react';
+import { Cake, Copy, DatabaseZap, Heart, Home, ListTodo, LogOut, MessageCircleHeart, MoreHorizontal, Pencil, Sparkles, CalendarClock, Stars, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
@@ -135,6 +135,8 @@ export default function Universe() {
 }
 
 function BottomNav({ visible, logout, onResetData, resetBusy }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+
   return (
     <motion.nav
       initial={false}
@@ -142,16 +144,40 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
     >
-      <div className="mx-auto flex max-w-5xl snap-x items-stretch gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 px-2 py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="relative mx-auto flex max-w-md items-stretch justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
         <BottomNavLink to="/universe/home" icon={<Home size={19} />} label="Home" />
         <BottomNavLink to="/universe/chat" icon={<MessageCircleHeart size={19} />} label="Chat" />
         <BottomNavLink to="/universe/timeline" icon={<CalendarClock size={19} />} label="Timeline" />
-        <BottomNavLink to="/universe/open-when" icon={<Heart size={19} />} label="Open" />
-        <BottomNavLink to="/universe/extras" icon={<ListTodo size={19} />} label="Extras" />
-        <BottomActionLink to="/birthday-surprise" icon={<Cake size={19} />} label="Surprise" accent />
-        <BottomActionLink to="/birthday-surprise/edit" icon={<Pencil size={19} />} label="Edit" />
-        <BottomButton icon={<LogOut size={19} />} label="Logout" onClick={logout} />
-        <BottomButton icon={<DatabaseZap size={19} />} label={resetBusy ? 'Clearing' : 'Clear'} onClick={onResetData} disabled={resetBusy} accent />
+        <button
+          type="button"
+          onClick={() => setMoreOpen((open) => !open)}
+          className={`flex min-h-[58px] min-w-[70px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
+            moreOpen ? 'border-blush/70 bg-blush/20 text-white' : 'border-white/15 text-pink-100 hover:border-blush/70'
+          }`}
+          aria-label={moreOpen ? 'Close more menu' : 'Open more menu'}
+          aria-expanded={moreOpen}
+        >
+          {moreOpen ? <X size={19} /> : <MoreHorizontal size={19} />}
+          <span>More</span>
+        </button>
+
+        {moreOpen ? (
+          <motion.div
+            initial={{ opacity: 0, y: 14, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="absolute bottom-[calc(100%+0.75rem)] right-0 w-[min(21rem,calc(100vw-1rem))] rounded-3xl border border-white/10 bg-midnight/95 p-3 shadow-[0_18px_55px_rgba(0,0,0,.45)] backdrop-blur-xl"
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/universe/sky" icon={<Stars size={17} />} label="Night Sky" accent onClick={() => setMoreOpen(false)} />
+              <MoreLink to="/universe/open-when" icon={<Heart size={17} />} label="Open When" onClick={() => setMoreOpen(false)} />
+              <MoreLink to="/universe/extras" icon={<ListTodo size={17} />} label="Extras" onClick={() => setMoreOpen(false)} />
+              <MoreLink to="/birthday-surprise" icon={<Cake size={17} />} label="Surprise" accent onClick={() => setMoreOpen(false)} />
+              <MoreLink to="/birthday-surprise/edit" icon={<Pencil size={17} />} label="Edit Surprise" onClick={() => setMoreOpen(false)} />
+              <MoreButton icon={<LogOut size={17} />} label="Logout" onClick={() => { setMoreOpen(false); logout(); }} />
+              <MoreButton icon={<DatabaseZap size={17} />} label={resetBusy ? 'Clearing' : 'Clear Data'} onClick={onResetData} disabled={resetBusy} accent />
+            </div>
+          </motion.div>
+        ) : null}
       </div>
     </motion.nav>
   );
@@ -162,7 +188,7 @@ function BottomNavLink({ to, icon, label }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
+        `flex min-h-[58px] min-w-[70px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
           isActive
             ? 'border-blush/70 bg-blush/20 text-white'
             : 'border-white/15 text-pink-100 hover:border-blush/70'
@@ -175,11 +201,12 @@ function BottomNavLink({ to, icon, label }) {
   );
 }
 
-function BottomActionLink({ to, icon, label, accent = false }) {
+function MoreLink({ to, icon, label, onClick, accent = false }) {
   return (
     <Link
       to={to}
-      className={`flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
+      onClick={onClick}
+      className={`flex min-h-12 items-center gap-2 rounded-2xl border px-3 py-2 text-xs transition ${
         accent
           ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
           : 'border-white/15 text-pink-100 hover:border-blush/70'
@@ -191,13 +218,13 @@ function BottomActionLink({ to, icon, label, accent = false }) {
   );
 }
 
-function BottomButton({ icon, label, onClick, disabled = false, accent = false }) {
+function MoreButton({ icon, label, onClick, disabled = false, accent = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex min-h-[58px] min-w-[70px] snap-start flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition disabled:opacity-60 sm:min-w-[76px] ${
+      className={`flex min-h-12 items-center gap-2 rounded-2xl border px-3 py-2 text-left text-xs transition disabled:opacity-60 ${
         accent
           ? 'border-roseGold/60 text-roseGold hover:bg-roseGold/10'
           : 'border-white/15 text-pink-100 hover:border-blush/70'

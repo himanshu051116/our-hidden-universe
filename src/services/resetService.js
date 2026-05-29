@@ -2,8 +2,30 @@ import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { deleteObject, listAll, ref } from 'firebase/storage';
 import { db, firebaseEnabled, storage } from './firebase';
 
-const demoKeys = ['ohu-demo-messages-v1', 'ohu-memories-v1', 'ohu-extras-v1', 'ohu-couple-room'];
-const collectionNames = ['messages', 'memories', 'openWhen', 'bucketList'];
+const demoKeys = [
+  'ohu-demo-messages-v1',
+  'ohu-memories-v1',
+  'ohu-extras-v1',
+  'ohu-couple-room',
+  'ohu-couple-profile-v1',
+  'ohu-read-together-v1',
+  'ohu-night-sky-v1',
+  'ohu-now-photos-v1',
+];
+const collectionNames = [
+  'messages',
+  'memories',
+  'openWhen',
+  'bucketList',
+  'readTogether',
+  'skyStars',
+  'skySignals',
+  'moodLanterns',
+  'sleepStates',
+  'skyStats',
+  'starTouches',
+  'rightNowPhotos',
+];
 
 function clearLocalDemoState() {
   demoKeys.forEach((key) => localStorage.removeItem(key));
