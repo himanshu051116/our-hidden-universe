@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">our-hidden-universe</string>
+    <string name="title_activity_main">our-hidden-universe</string>
+    <string name="package_name">com.ourhiddenuniverse.app</string>
+    <string name="custom_url_scheme">com.ourhiddenuniverse.app</string>
+</resources>
