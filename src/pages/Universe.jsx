@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Cake, Copy, DatabaseZap, Heart, Home, ListTodo, LogOut, MessageCircleHeart, MoreHorizontal, Pencil, Sparkles, CalendarClock, Stars, X } from 'lucide-react';
+import { Cake, Clapperboard, Copy, DatabaseZap, Heart, Home, ListTodo, LogOut, MessageCircleHeart, MoreHorizontal, Pencil, Sparkles, CalendarClock, Stars, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
@@ -179,6 +179,7 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
             className="absolute bottom-[calc(100%+0.75rem)] right-0 w-[min(21rem,calc(100vw-1rem))] rounded-3xl border border-white/10 bg-midnight/95 p-3 shadow-[0_18px_55px_rgba(0,0,0,.45)] backdrop-blur-xl"
           >
             <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/universe/extras#watch-party" icon={<Clapperboard size={17} />} label="Watch Party" accent onClick={() => setMoreOpen(false)} />
               <MoreLink to="/universe/open-when" icon={<Heart size={17} />} label="Open When" onClick={() => setMoreOpen(false)} />
               <MoreLink to="/universe/extras" icon={<ListTodo size={17} />} label="Extras" onClick={() => setMoreOpen(false)} />
               <MoreLink to="/birthday-surprise" icon={<Cake size={17} />} label="Surprise" accent onClick={() => setMoreOpen(false)} />

@@ -141,6 +141,10 @@ service cloud.firestore {
         allow read, write: if coupleMember(coupleId);
       }
 
+      match /watchParty/{itemId} {
+        allow read, write: if coupleMember(coupleId);
+      }
+
       match /skyStars/{itemId} {
         allow read, write: if coupleMember(coupleId);
       }

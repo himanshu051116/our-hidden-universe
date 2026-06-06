@@ -5,6 +5,7 @@ import { bucketListSeed, demoPlaylist, dreamBoardSeed, quotePool } from '../data
 import { loadLocalReadTogether, saveReadTogether, subscribeReadTogether } from '../services/coupleDashboardService.js';
 import { remainingCountdown } from '../utils/date.js';
 import SectionTitle from './SectionTitle.jsx';
+import WatchPartyPanel from './WatchPartyPanel.jsx';
 
 const extrasKey = 'ohu-extras-v1';
 const memoriesKey = 'ohu-memories-v1';
@@ -149,6 +150,8 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <WatchPartyPanel />
+
         <article id="read-together" className="scroll-mt-24 rounded-2xl border border-blush/25 bg-blush/10 p-4 lg:col-span-2">
           <p className="inline-flex items-center gap-2 text-sm text-roseGold">
             <BookOpen size={14} />

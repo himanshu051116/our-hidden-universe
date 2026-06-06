@@ -9,6 +9,7 @@ const demoKeys = [
   'ohu-couple-room',
   'ohu-couple-profile-v1',
   'ohu-read-together-v1',
+  'ohu-watch-party-v1',
   'ohu-night-sky-v1',
   'ohu-now-photos-v1',
 ];
@@ -18,6 +19,7 @@ const collectionNames = [
   'openWhen',
   'bucketList',
   'readTogether',
+  'watchParty',
   'skyStars',
   'skySignals',
   'moodLanterns',
