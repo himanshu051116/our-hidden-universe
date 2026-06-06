@@ -70,6 +70,21 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (!firebaseEnabled || !user?.uid || !coupleCode) return;
+    setDoc(
+      doc(db, 'couples', coupleCode, 'members', user.uid),
+      {
+        joinedAt: serverTimestamp(),
+        role: 'partner',
+        lastActiveAt: serverTimestamp(),
+      },
+      { merge: true },
+    ).catch(() => {
+      // The login screen handles invalid or missing rooms; this just repairs stale sessions.
+    });
+  }, [user?.uid, coupleCode]);
+
   async function login(email, password, accessCode, mode = 'login') {
     if (!firebaseEnabled) {
       localStorage.setItem('ohu-demo-session', 'true');

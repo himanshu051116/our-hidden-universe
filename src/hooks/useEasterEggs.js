@@ -44,12 +44,22 @@ export default function useEasterEggs() {
   }, [altTheme]);
 
   useEffect(() => {
+    const canTrackPointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!canTrackPointer) return undefined;
+    let frame = 0;
+
     function onMove(event) {
-      document.documentElement.style.setProperty('--cursor-x', `${event.clientX}px`);
-      document.documentElement.style.setProperty('--cursor-y', `${event.clientY}px`);
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        document.documentElement.style.setProperty('--cursor-x', `${event.clientX}px`);
+        document.documentElement.style.setProperty('--cursor-y', `${event.clientY}px`);
+      });
     }
-    window.addEventListener('pointermove', onMove);
-    return () => window.removeEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('pointermove', onMove);
+    };
   }, []);
 
   useEffect(() => {

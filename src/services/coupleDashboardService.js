@@ -9,6 +9,7 @@ import { db, firebaseEnabled } from './firebase.js';
 
 const profileKey = 'ohu-couple-profile-v1';
 const readTogetherKey = 'ohu-read-together-v1';
+const openWhenKey = 'ohu-open-when-v1';
 
 export function loadLocalProfile() {
   try {
@@ -55,11 +56,17 @@ export function saveLocalReadTogether(state) {
   localStorage.setItem(readTogetherKey, JSON.stringify({ ...state, updatedAt: new Date().toISOString() }));
 }
 
-export function subscribeCoupleMembers(coupleId, onChange) {
+export function subscribeCoupleMembers(coupleId, onChange, onError) {
   if (!firebaseEnabled || !coupleId) return undefined;
-  return onSnapshot(collection(db, 'couples', coupleId, 'members'), (snapshot) => {
-    onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
-  });
+  return onSnapshot(
+    collection(db, 'couples', coupleId, 'members'),
+    (snapshot) => {
+      onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export async function touchMemberPresence(coupleId, user) {
@@ -100,6 +107,66 @@ export async function saveReadTogether(coupleId, user, state) {
           updatedAt: new Date().toISOString(),
         },
       },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function loadLocalOpenWhen() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(openWhenKey) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalOpenWhenItem(item) {
+  const previous = loadLocalOpenWhen();
+  const next = [
+    ...previous.filter((entry) => entry.id !== item.id),
+    { ...item, updatedAt: new Date().toISOString() },
+  ];
+  localStorage.setItem(openWhenKey, JSON.stringify(next));
+  return next;
+}
+
+export function subscribeOpenWhen(coupleId, onChange, onError) {
+  if (!firebaseEnabled || !coupleId) {
+    onChange(loadLocalOpenWhen());
+    return undefined;
+  }
+
+  return onSnapshot(
+    collection(db, 'couples', coupleId, 'openWhen'),
+    (snapshot) => {
+      onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+    },
+    (error) => onError?.(error),
+  );
+}
+
+export async function saveOpenWhen(coupleId, user, item) {
+  const payload = {
+    title: item.title || '',
+    message: item.message || '',
+    musicUrl: item.musicUrl || '',
+    videoUrl: item.videoUrl || '',
+    updatedBy: user?.uid || 'local',
+    updatedByName: user?.displayName || user?.email || 'You',
+  };
+
+  if (!firebaseEnabled || !coupleId || !user?.uid) {
+    saveLocalOpenWhenItem({ id: item.id, ...payload });
+    return;
+  }
+
+  await touchMemberPresence(coupleId, user);
+  await setDoc(
+    doc(db, 'couples', coupleId, 'openWhen', item.id),
+    {
+      ...payload,
       updatedAt: serverTimestamp(),
     },
     { merge: true },

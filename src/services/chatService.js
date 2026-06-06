@@ -87,7 +87,7 @@ export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages,
   );
 }
 
-export async function sendEncryptedMessage({ coupleId, sharedSecret, senderId, text, selfDestructAt = null }) {
+export async function sendEncryptedMessage({ coupleId, sharedSecret, senderId, text, selfDestructAt = null, clientNonce = crypto.randomUUID() }) {
   if (!firebaseEnabled) return null;
   const content = String(text || '').trim();
   if (!content) throw new Error('Message cannot be empty.');
@@ -97,7 +97,7 @@ export async function sendEncryptedMessage({ coupleId, sharedSecret, senderId, t
 
   const payload = {
     encrypted: await encryptMessage(content, sharedSecret),
-    clientNonce: crypto.randomUUID(),
+    clientNonce,
     senderId,
     createdAt: serverTimestamp(),
     seenBy: [senderId],

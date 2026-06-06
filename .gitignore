@@ -71,3 +71,5 @@ dist/
 
 # dataconnect generated files
 .dataconnect
+
+.vercel

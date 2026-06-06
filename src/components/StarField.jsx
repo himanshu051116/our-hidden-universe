@@ -1,13 +1,16 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { hiddenNotes } from '../data/demoData.js';
+import useLiteEffects from '../hooks/useLiteEffects.js';
 
 export default function StarField() {
   const [note, setNote] = useState('');
+  const liteEffects = useLiteEffects();
+  const starCount = liteEffects ? 24 : 84;
 
   const stars = useMemo(
     () =>
-      Array.from({ length: 120 }, (_, index) => ({
+      Array.from({ length: starCount }, (_, index) => ({
         id: index,
         left: Math.random() * 100,
         top: Math.random() * 100,
@@ -15,25 +18,25 @@ export default function StarField() {
         delay: Math.random() * 5,
         duration: 3 + Math.random() * 3,
       })),
-    [],
+    [starCount],
   );
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       {stars.map((star) => (
-        <motion.button
+        <button
           key={star.id}
           type="button"
           onClick={() => setNote(hiddenNotes[star.id % hiddenNotes.length])}
-          className="pointer-events-auto absolute rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]"
+          className="ambient-star pointer-events-auto absolute rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]"
           style={{
             left: `${star.left}%`,
             top: `${star.top}%`,
             width: `${star.size}px`,
             height: `${star.size}px`,
+            animationDelay: `${star.delay}s`,
+            animationDuration: `${star.duration}s`,
           }}
-          animate={{ opacity: [0.25, 1, 0.35], scale: [1, 1.8, 1] }}
-          transition={{ duration: star.duration, delay: star.delay, repeat: Infinity }}
           aria-label="Reveal hidden note"
         />
       ))}

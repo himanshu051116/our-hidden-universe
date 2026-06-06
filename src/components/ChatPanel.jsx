@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, AlertTriangle, CheckCheck, ImagePlus, Mic, Send, ShieldCheck, TimerReset } from 'lucide-react';
+import { AlertTriangle, CheckCheck, ImagePlus, Mic, Send } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
@@ -15,7 +15,6 @@ import {
 } from '../services/chatService.js';
 import { firebaseEnabled } from '../services/firebase.js';
 import { formatTime, toDateValue } from '../utils/date.js';
-import SectionTitle from './SectionTitle.jsx';
 
 const demoKey = 'ohu-demo-messages-v1';
 const legacyDemoIds = new Set(['d1', 'd2']);
@@ -95,6 +94,7 @@ function readReceiptForMessage(message, currentUserId) {
 export default function ChatPanel({ onMessageCountChange }) {
   const { user, coupleId, sharedSecret } = useAuth();
   const [messages, setMessages] = useState(() => loadDemoMessages());
+  const [pendingMessages, setPendingMessages] = useState([]);
   const [typingMap, setTypingMap] = useState({});
   const [draft, setDraft] = useState('');
   const [selfDestruct, setSelfDestruct] = useState('none');
@@ -106,10 +106,12 @@ export default function ChatPanel({ onMessageCountChange }) {
   const noticeTimerRef = useRef(null);
   const endRef = useRef(null);
 
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => !message.selfDestructAt || new Date(message.selfDestructAt).getTime() > Date.now()),
-    [messages],
-  );
+  const visibleMessages = useMemo(() => {
+    const confirmedNonces = new Set(messages.map((message) => message.clientNonce).filter(Boolean));
+    return [...messages, ...pendingMessages.filter((message) => !confirmedNonces.has(message.clientNonce))]
+      .filter((message) => !message.selfDestructAt || new Date(message.selfDestructAt).getTime() > Date.now())
+      .sort((a, b) => toDateValue(a.createdAt).getTime() - toDateValue(b.createdAt).getTime());
+  }, [messages, pendingMessages]);
 
   const partnerTyping = Object.entries(typingMap).some(([uid, isTyping]) => uid !== user?.uid && isTyping);
 
@@ -121,6 +123,9 @@ export default function ChatPanel({ onMessageCountChange }) {
       sharedSecret,
       (nextMessages) => {
         setMessages(nextMessages);
+        setPendingMessages((previous) =>
+          previous.filter((pending) => !nextMessages.some((message) => message.clientNonce === pending.clientNonce)),
+        );
       },
       () => {
         showNotice('Chat sync is blocked. Check that both partners joined the same couple code and Firestore rules are deployed.');
@@ -199,16 +204,36 @@ export default function ChatPanel({ onMessageCountChange }) {
       selfDestruct === 'none'
         ? null
         : new Date(Date.now() + Number(selfDestruct) * 1000).toISOString();
+    const clientNonce = crypto.randomUUID();
 
     try {
       if (firebaseEnabled) {
         if (cleanDraft && !attachment) {
+          setPendingMessages((previous) => [
+            ...previous,
+            {
+              id: `pending-${clientNonce}`,
+              clientNonce,
+              text: cleanDraft,
+              senderId: user.uid,
+              createdAt: new Date().toISOString(),
+              seenBy: [user.uid],
+              seenAtBy: { [user.uid]: new Date().toISOString() },
+              reactions: [],
+              type: 'text',
+              selfDestructAt,
+              pending: true,
+            },
+          ]);
+          setDraft('');
+          setSelfDestruct('none');
           await sendEncryptedMessage({
             coupleId,
             sharedSecret,
             senderId: user.uid,
             text: cleanDraft,
             selfDestructAt,
+            clientNonce,
           });
         }
         if (attachment) {
@@ -260,7 +285,7 @@ export default function ChatPanel({ onMessageCountChange }) {
         setMessages((previous) => [...previous, ...localMessages]);
       }
 
-      setDraft('');
+      if (!firebaseEnabled || attachment) setDraft('');
       setSelfDestruct('none');
       setAttachment(null);
       if (firebaseEnabled && typingStateRef.current) {
@@ -268,6 +293,8 @@ export default function ChatPanel({ onMessageCountChange }) {
         setTyping(coupleId, user.uid, false);
       }
     } catch (error) {
+      setPendingMessages((previous) => previous.filter((message) => message.clientNonce !== clientNonce));
+      if (firebaseEnabled && cleanDraft && !attachment) setDraft(cleanDraft);
       showNotice(error.message || 'Unable to send message right now.');
     } finally {
       setSending(false);
@@ -313,66 +340,44 @@ export default function ChatPanel({ onMessageCountChange }) {
   }
 
   return (
-    <section id="chat" className="glass rounded-3xl p-4 sm:p-6">
-      <SectionTitle
-        overline="Private Chat"
-        title="End-to-end encrypted love notes"
-        subtitle="Text is encrypted on the client before storage. Attachments use authenticated protected storage."
-      />
-
-      {!firebaseEnabled ? (
-        <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold">
-          <AlertTriangle size={13} />
-          Local demo mode is active. Messages stay in this browser until Firebase env vars are loaded and the app is restarted.
+    <section id="chat" className="glass overflow-hidden rounded-2xl sm:rounded-3xl">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/30 px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blush to-roseGold font-display text-xl text-midnight">
+            U
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-white">Our Hidden Universe</h2>
+            <p className="truncate text-xs text-pink-100/65">{partnerTyping ? 'Partner is typing...' : firebaseEnabled ? 'Private synced chat' : 'Local demo chat'}</p>
+          </div>
         </div>
-      ) : null}
-
-      <div className="mb-3 grid gap-2 rounded-2xl bg-black/30 p-3 text-xs text-pink-100/80 sm:grid-cols-3">
-        <p className="inline-flex items-center gap-2">
-          <ShieldCheck size={14} className="text-roseGold" />
-          Encrypted text + integrity check
-        </p>
-        <p className="inline-flex items-center gap-2">
-          <CheckCheck size={14} className="text-roseGold" />
-          Seen receipts with read time
-        </p>
-        <p className="inline-flex items-center gap-2">
-          <TimerReset size={14} className="text-roseGold" />
-          Secure uploads (image/audio, max {maxUploadMb}MB)
-        </p>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/35 px-3 py-3 text-xs text-pink-100/80">
-        <span className="inline-flex items-center gap-2">
-          <Activity size={14} className={partnerTyping ? 'text-blush' : 'text-roseGold'} />
-          {partnerTyping ? 'Partner is typing now' : 'Typing indicator ready'}
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <CheckCheck size={14} className="text-blush" />
-          Read receipts appear on your sent messages
+        <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-pink-100/75">
+          <CheckCheck size={13} />
+          Live
         </span>
       </div>
 
-      {notice ? (
-        <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold">
+      {(notice || !firebaseEnabled) ? (
+        <div className="mx-4 mt-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold sm:mx-5">
           <AlertTriangle size={13} />
-          {notice}
+          {notice || 'Local demo mode is active. Use Firebase env vars for two-phone syncing.'}
         </div>
       ) : null}
 
-      <div className="h-[320px] overflow-y-auto rounded-2xl bg-black/35 p-3 sm:h-[420px] sm:p-4">
-        <div className="space-y-3">
+      <div className="h-[calc(100vh-18rem)] min-h-[420px] overflow-y-auto bg-[#090611] p-3 sm:h-[560px] sm:p-5">
+        <div className="space-y-2">
           {!visibleMessages.length ? (
-            <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-6 text-center text-sm text-pink-100/75">
-              No messages yet. Your private chat history starts with the first message you send.
+            <div className="mx-auto mt-16 max-w-xs rounded-2xl border border-white/10 bg-black/35 px-4 py-5 text-center text-sm text-pink-100/70">
+              Start with a small message. It will appear here instantly.
             </div>
           ) : null}
+
           {visibleMessages.map((message) => {
             const own = message.senderId === user?.uid;
             const createdAt = toDateValue(message.createdAt);
             return (
               <div key={message.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm sm:max-w-[72%] ${own ? 'bg-wine/75 text-pink-50' : 'bg-plum/75 text-pink-100'}`}>
+                <div className={`max-w-[86%] rounded-2xl px-3.5 py-2.5 text-sm shadow-lg sm:max-w-[70%] ${own ? 'rounded-br-md bg-[#245c4f] text-white' : 'rounded-bl-md bg-[#1c1726] text-pink-100'}`}>
                   {message.type === 'image' && message.mediaUrl ? (
                     <img src={message.mediaUrl} alt="shared memory" className="mb-2 max-h-56 w-full rounded-xl object-cover" />
                   ) : null}
@@ -383,34 +388,33 @@ export default function ChatPanel({ onMessageCountChange }) {
                     </audio>
                   ) : null}
 
-                  {message.text ? <p>{message.text}</p> : null}
-                  {message.caption ? <p className="mt-1 text-xs text-pink-100/80">{message.caption}</p> : null}
-
+                  {message.text ? <p className="whitespace-pre-wrap break-words leading-5">{message.text}</p> : null}
+                  {message.caption ? <p className="mt-1 whitespace-pre-wrap break-words text-xs text-pink-100/80">{message.caption}</p> : null}
                   {message.reactions?.length ? <p className="mt-1 text-xs text-blush/90">{message.reactions.join(' ')}</p> : null}
 
                   {message.selfDestructAt ? (
-                    <p className="mt-1 text-[11px] text-roseGold/90">
-                      Disappears at {formatTime(message.selfDestructAt)}
-                    </p>
+                    <p className="mt-1 text-[11px] text-roseGold/90">Disappears at {formatTime(message.selfDestructAt)}</p>
                   ) : null}
 
-                  <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-pink-100/70">
-                    <span>{createdAt.toLocaleDateString([], { month: 'short', day: 'numeric' })} {formatTime(createdAt)}</span>
+                  <div className="mt-1 flex items-center justify-end gap-2 text-[10px] text-pink-100/60">
+                    <span>{formatTime(createdAt)}</span>
                     {own ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] text-pink-50">
+                      <span className="inline-flex items-center gap-1 text-pink-100/75">
                         <CheckCheck size={12} />
-                        {readReceiptForMessage(message, user?.uid)}
+                        {message.pending ? 'Sending' : readReceiptForMessage(message, user?.uid)}
                       </span>
                     ) : null}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onReact(message.id)}
-                    className="mt-2 rounded-full border border-white/10 px-3 py-1 text-[11px] text-blush transition hover:border-blush/70"
-                  >
-                    Miss You {'\u2764\uFE0F'}
-                  </button>
+                  {!message.pending ? (
+                    <button
+                      type="button"
+                      onClick={() => onReact(message.id)}
+                      className="mt-1 rounded-full px-2 py-1 text-[11px] text-blush transition hover:bg-white/10"
+                    >
+                      Miss You {'\u2764\uFE0F'}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             );
@@ -422,9 +426,9 @@ export default function ChatPanel({ onMessageCountChange }) {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 6 }}
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-blush/30 bg-blush/10 px-3 py-2 text-xs text-blush"
+                className="inline-flex w-fit items-center gap-2 rounded-2xl rounded-bl-md bg-[#1c1726] px-3 py-2 text-xs text-blush"
               >
-                <span>Your partner is typing</span>
+                <span>typing</span>
                 <span className="flex gap-1">
                   {[0, 1, 2].map((dot) => (
                     <motion.span
@@ -442,78 +446,68 @@ export default function ChatPanel({ onMessageCountChange }) {
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
+      <div className="border-t border-white/10 bg-black/35 p-3 sm:p-4">
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
           {emojis.map((emoji) => (
             <button
               key={emoji}
               type="button"
-              className="rounded-full bg-white/10 px-3 py-1 text-sm transition hover:bg-white/20"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm transition hover:bg-white/20"
               onClick={() => onDraftChange(draft + emoji)}
             >
               {emoji}
             </button>
           ))}
-        </div>
-
-        <textarea
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-              event.preventDefault();
-              handleSend();
-            }
-          }}
-          rows={3}
-          placeholder="Write what your heart is saying..."
-          className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
-        />
-        <div className="flex items-center justify-between text-[11px] text-pink-100/70">
-          <span>Press Ctrl/Cmd + Enter to send</span>
-          <span>{draft.trim().length}/{CHAT_LIMITS.maxMessageLength}</span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-xs text-pink-100 transition hover:bg-white/20">
-            <span className="inline-flex items-center gap-2">
-              <ImagePlus size={14} />
-              Image
-            </span>
-            <input type="file" accept="image/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
-          </label>
-
-          <label className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-xs text-pink-100 transition hover:bg-white/20">
-            <span className="inline-flex items-center gap-2">
-              <Mic size={14} />
-              Voice
-            </span>
-            <input type="file" accept="audio/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
-          </label>
-
           <select
             value={selfDestruct}
             onChange={(event) => setSelfDestruct(event.target.value)}
-            className="rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs text-pink-100 outline-none"
+            className="ml-auto h-9 shrink-0 rounded-full border border-white/10 bg-black/35 px-3 text-xs text-pink-100 outline-none"
           >
-            <option value="none">No self-destruct</option>
-            <option value="30">Self-destruct in 30s</option>
-            <option value="300">Self-destruct in 5m</option>
-            <option value="3600">Self-destruct in 1h</option>
+            <option value="none">Keep</option>
+            <option value="30">30s</option>
+            <option value="300">5m</option>
+            <option value="3600">1h</option>
           </select>
+        </div>
 
-          {attachment ? <p className="text-xs text-blush/90">{attachment.name}</p> : null}
+        {attachment ? <p className="mb-2 truncate text-xs text-blush/90">{attachment.name}</p> : null}
+
+        <div className="flex items-end gap-2">
+          <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full bg-white/10 text-pink-100 transition hover:bg-white/20" aria-label="Attach image">
+            <ImagePlus size={18} />
+            <input type="file" accept="image/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
+          </label>
+
+          <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full bg-white/10 text-pink-100 transition hover:bg-white/20" aria-label="Attach voice">
+            <Mic size={18} />
+            <input type="file" accept="audio/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
+          </label>
+
+          <textarea
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                event.preventDefault();
+                handleSend();
+              }
+            }}
+            rows={1}
+            placeholder="Message"
+            className="max-h-28 min-h-11 flex-1 resize-none rounded-3xl border border-white/10 bg-black/45 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
+          />
 
           <button
             type="button"
             onClick={handleSend}
             disabled={sending}
-            className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-4 py-2 text-xs font-semibold text-midnight transition hover:brightness-105 disabled:opacity-60"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-r from-blush to-roseGold text-midnight transition hover:brightness-105 disabled:opacity-60"
+            aria-label={sending ? 'Sending message' : 'Send message'}
           >
-            <Send size={14} />
-            {sending ? 'Sending...' : 'Send'}
+            <Send size={18} />
           </button>
         </div>
+        <p className="mt-2 text-right text-[10px] text-pink-100/50">{draft.trim().length}/{CHAT_LIMITS.maxMessageLength}</p>
       </div>
     </section>
   );

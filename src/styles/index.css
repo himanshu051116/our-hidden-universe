@@ -59,6 +59,59 @@ textarea {
     linear-gradient(135deg, var(--bg-base-a) 0%, var(--bg-base-b) 50%, var(--bg-base-c) 100%);
 }
 
+.ambient-star,
+.sky-spark {
+  animation-name: soft-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity, transform;
+}
+
+@media (max-width: 768px) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .glass {
+    background: rgba(20, 12, 29, 0.94);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(8px);
+  }
+
+  .cinematic-bg,
+  body.theme-aurora .cinematic-bg {
+    background:
+      radial-gradient(circle at 18% 10%, rgba(216, 160, 127, 0.1), transparent 22rem),
+      linear-gradient(145deg, var(--bg-base-a), var(--bg-base-b) 55%, var(--bg-base-c));
+  }
+
+  .ambient-star,
+  .sky-spark {
+    animation: none;
+    opacity: 0.55;
+    transform: none;
+    will-change: auto;
+  }
+
+  .aurora-border::before {
+    filter: none;
+    opacity: 0.3;
+  }
+}
+
+@keyframes soft-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.95;
+    transform: scale(1.65);
+  }
+}
+
 .aurora-border {
   position: relative;
 }
@@ -72,4 +125,25 @@ textarea {
   content: '';
   filter: blur(14px);
   opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .ambient-star,
+  .sky-spark {
+    opacity: 0.45;
+    transform: none;
+  }
 }

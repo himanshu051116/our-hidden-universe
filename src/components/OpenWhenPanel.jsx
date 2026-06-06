@@ -47,6 +47,7 @@ export default function OpenWhenPanel() {
                 type="button"
                 onClick={() => setActive(null)}
                 className="absolute right-4 top-4 rounded-full border border-white/20 p-2 text-pink-100 transition hover:text-white"
+                aria-label="Close open when message"
               >
                 <X size={15} />
               </button>

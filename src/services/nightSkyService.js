@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { db, firebaseEnabled, storage } from './firebase.js';
+import { touchMemberPresence } from './coupleDashboardService.js';
 
 const skyKey = 'ohu-night-sky-v1';
 const nowPhotosKey = 'ohu-now-photos-v1';
@@ -54,7 +55,19 @@ function withId(snapshot) {
   return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
 }
 
-export function subscribeNightSky(coupleId, onChange) {
+async function ensureSkyMember(coupleId, user) {
+  if (!firebaseEnabled || !coupleId || !user?.uid) return;
+  await touchMemberPresence(coupleId, user);
+}
+
+function friendlyFirebaseError(error, fallback) {
+  if (error?.code === 'permission-denied') {
+    return new Error('Room sync is not ready yet. Refresh once, then try again.');
+  }
+  return new Error(error?.message || fallback);
+}
+
+export function subscribeNightSky(coupleId, onChange, onError) {
   if (!firebaseEnabled || !coupleId) {
     const emit = () => onChange({ ...localSky(), photos: readLocal(nowPhotosKey, []) });
     emit();
@@ -64,35 +77,38 @@ export function subscribeNightSky(coupleId, onChange) {
 
   const state = { stars: [], signals: [], lanterns: {}, sleep: {}, photos: [], stats: {}, touches: {} };
   const emit = () => onChange({ ...state });
+  const reportError = (error) => {
+    onError?.(error);
+  };
   const unsubscribers = [
     onSnapshot(query(pathFor(coupleId, 'skyStars'), orderBy('createdAt', 'asc')), (snapshot) => {
       state.stars = withId(snapshot);
       emit();
-    }),
+    }, reportError),
     onSnapshot(query(pathFor(coupleId, 'skySignals'), orderBy('createdAt', 'desc'), limit(18)), (snapshot) => {
       state.signals = withId(snapshot);
       emit();
-    }),
+    }, reportError),
     onSnapshot(pathFor(coupleId, 'moodLanterns'), (snapshot) => {
       state.lanterns = Object.fromEntries(snapshot.docs.map((entry) => [entry.id, { id: entry.id, ...entry.data() }]));
       emit();
-    }),
+    }, reportError),
     onSnapshot(pathFor(coupleId, 'sleepStates'), (snapshot) => {
       state.sleep = Object.fromEntries(snapshot.docs.map((entry) => [entry.id, { id: entry.id, ...entry.data() }]));
       emit();
-    }),
+    }, reportError),
     onSnapshot(doc(db, 'couples', coupleId, 'skyStats', 'shared'), (snapshot) => {
       state.stats = snapshot.exists() ? snapshot.data() : {};
       emit();
-    }),
+    }, reportError),
     onSnapshot(pathFor(coupleId, 'starTouches'), (snapshot) => {
       state.touches = Object.fromEntries(snapshot.docs.map((entry) => [entry.id, entry.data()]));
       emit();
-    }),
+    }, reportError),
     onSnapshot(query(pathFor(coupleId, 'rightNowPhotos'), orderBy('createdAt', 'desc'), limit(20)), (snapshot) => {
       state.photos = withId(snapshot);
       emit();
-    }),
+    }, reportError),
   ];
 
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -114,7 +130,12 @@ export async function createSkyStar(coupleId, user, payload) {
     return;
   }
 
-  await addDoc(pathFor(coupleId, 'skyStars'), { ...star, createdAt: serverTimestamp() });
+  try {
+    await ensureSkyMember(coupleId, user);
+    await addDoc(pathFor(coupleId, 'skyStars'), { ...star, createdAt: serverTimestamp() });
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to place this star right now.');
+  }
 }
 
 export async function sendSkySignal(coupleId, user, type) {
@@ -136,8 +157,13 @@ export async function sendSkySignal(coupleId, user, type) {
     return;
   }
 
-  await addDoc(pathFor(coupleId, 'skySignals'), { ...signal, createdAt: serverTimestamp() });
-  await setDoc(doc(db, 'couples', coupleId, 'skyStats', 'shared'), { [statField]: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+  try {
+    await ensureSkyMember(coupleId, user);
+    await addDoc(pathFor(coupleId, 'skySignals'), { ...signal, createdAt: serverTimestamp() });
+    await setDoc(doc(db, 'couples', coupleId, 'skyStats', 'shared'), { [statField]: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to send this signal right now.');
+  }
 }
 
 export async function setMoodLantern(coupleId, user, mood) {
@@ -154,7 +180,12 @@ export async function setMoodLantern(coupleId, user, mood) {
     return;
   }
 
-  await setDoc(doc(db, 'couples', coupleId, 'moodLanterns', user.uid), { ...lantern, updatedAt: serverTimestamp() }, { merge: true });
+  try {
+    await ensureSkyMember(coupleId, user);
+    await setDoc(doc(db, 'couples', coupleId, 'moodLanterns', user.uid), { ...lantern, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to update your mood lantern.');
+  }
 }
 
 export async function setSleepState(coupleId, user, asleep) {
@@ -175,8 +206,13 @@ export async function setSleepState(coupleId, user, asleep) {
     return;
   }
 
-  await setDoc(doc(db, 'couples', coupleId, 'sleepStates', user.uid), { ...state, updatedAt: serverTimestamp() }, { merge: true });
-  await setDoc(doc(db, 'couples', coupleId, 'skyStats', 'shared'), { sleepRituals: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+  try {
+    await ensureSkyMember(coupleId, user);
+    await setDoc(doc(db, 'couples', coupleId, 'sleepStates', user.uid), { ...state, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(doc(db, 'couples', coupleId, 'skyStats', 'shared'), { sleepRituals: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to update sleep mode.');
+  }
 }
 
 export async function touchSkyStar(coupleId, user, star) {
@@ -190,11 +226,16 @@ export async function touchSkyStar(coupleId, user, star) {
     return;
   }
 
-  await setDoc(
-    doc(db, 'couples', coupleId, 'starTouches', star.id),
-    { [user.uid]: touchedAt, starTitle: star.title || star.kind || 'Star', updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+  try {
+    await ensureSkyMember(coupleId, user);
+    await setDoc(
+      doc(db, 'couples', coupleId, 'starTouches', star.id),
+      { [user.uid]: touchedAt, starTitle: star.title || star.kind || 'Star', updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to touch this star.');
+  }
 }
 
 export async function uploadRightNowPhoto(coupleId, user, file, caption) {
@@ -222,9 +263,14 @@ export async function uploadRightNowPhoto(coupleId, user, file, caption) {
     return;
   }
 
-  const extension = file.name.split('.').pop() || 'jpg';
-  const objectRef = ref(storage, `couples/${coupleId}/right-now/${user.uid}/${Date.now()}-${crypto.randomUUID()}.${extension}`);
-  await uploadBytes(objectRef, file, { contentType: file.type });
-  const photoUrl = await getDownloadURL(objectRef);
-  await addDoc(pathFor(coupleId, 'rightNowPhotos'), { ...photo, photoUrl, createdAt: serverTimestamp() });
+  try {
+    await ensureSkyMember(coupleId, user);
+    const extension = file.name.split('.').pop() || 'jpg';
+    const objectRef = ref(storage, `couples/${coupleId}/right-now/${user.uid}/${Date.now()}-${crypto.randomUUID()}.${extension}`);
+    await uploadBytes(objectRef, file, { contentType: file.type });
+    const photoUrl = await getDownloadURL(objectRef);
+    await addDoc(pathFor(coupleId, 'rightNowPhotos'), { ...photo, photoUrl, createdAt: serverTimestamp() });
+  } catch (error) {
+    throw friendlyFirebaseError(error, 'Unable to share this photo.');
+  }
 }

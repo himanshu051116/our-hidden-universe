@@ -5,11 +5,13 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import useEasterEggs from '../hooks/useEasterEggs.js';
+import useLiteEffects from '../hooks/useLiteEffects.js';
 import { resetCoupleData } from '../services/resetService.js';
 
 export default function Universe() {
   const { logout, coupleId, coupleCodeDisplay } = useAuth();
   const { easterEggMessage } = useEasterEggs();
+  const liteEffects = useLiteEffects();
   const [messageCount, setMessageCount] = useState(() => {
     try {
       const raw = localStorage.getItem('ohu-demo-messages-v1');
@@ -27,18 +29,26 @@ export default function Universe() {
   const lastScrollYRef = useRef(0);
 
   useEffect(() => {
+    if (liteEffects) return undefined;
     lastScrollYRef.current = window.scrollY;
+    let frame = 0;
     function onScroll() {
-      const currentY = window.scrollY;
-      const delta = currentY - lastScrollYRef.current;
-      if (Math.abs(delta) < 8) return;
-      setNavVisible(delta < 0 || currentY < 40);
-      lastScrollYRef.current = currentY;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const currentY = window.scrollY;
+        const delta = currentY - lastScrollYRef.current;
+        if (Math.abs(delta) < 8) return;
+        setNavVisible(delta < 0 || currentY < 40);
+        lastScrollYRef.current = currentY;
+      });
     }
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [liteEffects]);
 
   async function onResetData() {
     const confirmed = window.confirm('Clear all couple data for this universe? This removes chat records and saved entries.');
@@ -144,14 +154,15 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
     >
-      <div className="relative mx-auto flex max-w-md items-stretch justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+      <div className="relative mx-auto flex max-w-lg items-stretch justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 sm:gap-2">
         <BottomNavLink to="/universe/home" icon={<Home size={19} />} label="Home" />
         <BottomNavLink to="/universe/chat" icon={<MessageCircleHeart size={19} />} label="Chat" />
         <BottomNavLink to="/universe/timeline" icon={<CalendarClock size={19} />} label="Timeline" />
+        <BottomNavLink to="/universe/sky" icon={<Stars size={19} />} label="Night Sky" />
         <button
           type="button"
           onClick={() => setMoreOpen((open) => !open)}
-          className={`flex min-h-[58px] min-w-[70px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
+          className={`flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-[10px] leading-none transition sm:px-2 sm:text-[11px] ${
             moreOpen ? 'border-blush/70 bg-blush/20 text-white' : 'border-white/15 text-pink-100 hover:border-blush/70'
           }`}
           aria-label={moreOpen ? 'Close more menu' : 'Open more menu'}
@@ -168,7 +179,6 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
             className="absolute bottom-[calc(100%+0.75rem)] right-0 w-[min(21rem,calc(100vw-1rem))] rounded-3xl border border-white/10 bg-midnight/95 p-3 shadow-[0_18px_55px_rgba(0,0,0,.45)] backdrop-blur-xl"
           >
             <div className="grid grid-cols-2 gap-2">
-              <MoreLink to="/universe/sky" icon={<Stars size={17} />} label="Night Sky" accent onClick={() => setMoreOpen(false)} />
               <MoreLink to="/universe/open-when" icon={<Heart size={17} />} label="Open When" onClick={() => setMoreOpen(false)} />
               <MoreLink to="/universe/extras" icon={<ListTodo size={17} />} label="Extras" onClick={() => setMoreOpen(false)} />
               <MoreLink to="/birthday-surprise" icon={<Cake size={17} />} label="Surprise" accent onClick={() => setMoreOpen(false)} />
@@ -188,7 +198,7 @@ function BottomNavLink({ to, icon, label }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `flex min-h-[58px] min-w-[70px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] leading-none transition sm:min-w-[76px] ${
+        `flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-center text-[10px] leading-none transition sm:px-2 sm:text-[11px] ${
           isActive
             ? 'border-blush/70 bg-blush/20 text-white'
             : 'border-white/15 text-pink-100 hover:border-blush/70'

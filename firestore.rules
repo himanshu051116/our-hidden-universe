@@ -109,6 +109,7 @@ service cloud.firestore {
 
       match /members/{userId} {
         allow get: if signedIn() && (request.auth.uid == userId || coupleMember(coupleId));
+        allow list: if coupleMember(coupleId);
         allow create: if signedIn()
           && request.auth.uid == userId
           && (roomExists(coupleId) || roomExistsAfterWrite(coupleId))

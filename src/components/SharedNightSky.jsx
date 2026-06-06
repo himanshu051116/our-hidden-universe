@@ -14,8 +14,9 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
+import useLiteEffects from '../hooks/useLiteEffects.js';
 import {
   createSkyStar,
   sendSkySignal,
@@ -82,6 +83,7 @@ function loadMemories() {
 
 export default function SharedNightSky() {
   const { user, coupleId } = useAuth();
+  const liteEffects = useLiteEffects();
   const [sky, setSky] = useState({ stars: [], signals: [], lanterns: {}, sleep: {}, photos: [], stats: {}, touches: {} });
   const [selectedStar, setSelectedStar] = useState(null);
   const [starFormOpen, setStarFormOpen] = useState(false);
@@ -94,8 +96,21 @@ export default function SharedNightSky() {
   const [dragging, setDragging] = useState(false);
   const [memoryIndex, setMemoryIndex] = useState(0);
   const dragRef = useRef({ x: 0, y: 0, pan });
+  const dragFrameRef = useRef(0);
+  const noticeTimerRef = useRef(null);
 
   const memories = useMemo(() => loadMemories(), []);
+  const backgroundStars = useMemo(
+    () =>
+      Array.from({ length: liteEffects ? 16 : 36 }, (_, index) => ({
+        id: index,
+        left: (index * 19) % 100,
+        top: (index * 31) % 96,
+        duration: 2.8 + (index % 6),
+        delay: index * 0.05,
+      })),
+    [liteEffects],
+  );
   const currentMemory = memories[memoryIndex % Math.max(1, memories.length)];
   const lanterns = Object.values(sky.lanterns || {});
   const sleepStates = Object.values(sky.sleep || {});
@@ -104,13 +119,34 @@ export default function SharedNightSky() {
   const energy = Math.min(100, missYou * 12);
   const latestSignal = sky.signals?.[0];
 
-  useEffect(() => subscribeNightSky(coupleId, setSky), [coupleId]);
+  const showNotice = useCallback((text, duration = 2400) => {
+    setNotice(text);
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(''), duration);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNightSky(
+      coupleId,
+      setSky,
+      () => showNotice('Night Sky sync is blocked. Check Firestore rules, indexes, and your couple room access.', 4200),
+    );
+    return unsubscribe;
+  }, [coupleId, showNotice]);
 
   useEffect(() => {
     if (!memories.length) return undefined;
     const timer = window.setInterval(() => setMemoryIndex((index) => index + 1), 12000);
     return () => window.clearInterval(timer);
   }, [memories.length]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(noticeTimerRef.current);
+      window.cancelAnimationFrame(dragFrameRef.current);
+    },
+    [],
+  );
 
   function onPointerDown(event) {
     if (event.target.closest('button, input, textarea, select, a')) return;
@@ -120,9 +156,14 @@ export default function SharedNightSky() {
 
   function onPointerMove(event) {
     if (!dragging) return;
-    setPan({
-      x: dragRef.current.pan.x + event.clientX - dragRef.current.x,
-      y: dragRef.current.pan.y + event.clientY - dragRef.current.y,
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    window.cancelAnimationFrame(dragFrameRef.current);
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      setPan({
+        x: dragRef.current.pan.x + clientX - dragRef.current.x,
+        y: dragRef.current.pan.y + clientY - dragRef.current.y,
+      });
     });
   }
 
@@ -133,24 +174,54 @@ export default function SharedNightSky() {
   async function onAddStar(event) {
     event.preventDefault();
     if (!starForm.title.trim()) return;
-    await createSkyStar(coupleId, user, {
-      ...starForm,
-      title: starForm.title.trim(),
-      note: starForm.note.trim(),
-    });
-    setStarForm({ title: '', note: '', kind: 'thought' });
-    setStarFormOpen(false);
+    try {
+      await createSkyStar(coupleId, user, {
+        ...starForm,
+        title: starForm.title.trim(),
+        note: starForm.note.trim(),
+      });
+      setStarForm({ title: '', note: '', kind: 'thought' });
+      setStarFormOpen(false);
+      showNotice('Star placed in your sky.');
+    } catch (error) {
+      showNotice(error.message || 'Unable to place this star right now.');
+    }
   }
 
   async function onSignal(type) {
-    await sendSkySignal(coupleId, user, type);
-    setNotice(type === 'thinking' ? 'A thought crossed the universe.' : type === 'heartbeat' ? 'Heartbeat sent.' : 'Miss-you energy added.');
-    window.setTimeout(() => setNotice(''), 1800);
+    try {
+      await sendSkySignal(coupleId, user, type);
+      showNotice(type === 'thinking' ? 'A thought crossed the universe.' : type === 'heartbeat' ? 'Heartbeat sent.' : 'Miss-you energy added.', 1800);
+    } catch (error) {
+      showNotice(error.message || 'Unable to send this signal right now.');
+    }
   }
 
   async function onTouchStar(star) {
     setSelectedStar(star);
-    await touchSkyStar(coupleId, user, star);
+    try {
+      await touchSkyStar(coupleId, user, star);
+    } catch (error) {
+      showNotice(error.message || 'Unable to mark this star as touched.');
+    }
+  }
+
+  async function onMood(mood) {
+    try {
+      await setMoodLantern(coupleId, user, mood);
+      showNotice('Mood lantern updated.', 1800);
+    } catch (error) {
+      showNotice(error.message || 'Unable to update your mood lantern.');
+    }
+  }
+
+  async function onSleep(asleep) {
+    try {
+      await setSleepState(coupleId, user, asleep);
+      showNotice(asleep ? 'Goodnight mode is on.' : 'Good morning mode is on.', 1800);
+    } catch (error) {
+      showNotice(error.message || 'Unable to update sleep mode.');
+    }
   }
 
   async function onPhoto(event) {
@@ -160,9 +231,9 @@ export default function SharedNightSky() {
     try {
       await uploadRightNowPhoto(coupleId, user, file, photoCaption);
       setPhotoCaption('');
+      showNotice('Photo shared to the sky.', 1800);
     } catch (error) {
-      setNotice(error.message || 'Unable to share this photo.');
-      window.setTimeout(() => setNotice(''), 2400);
+      showNotice(error.message || 'Unable to share this photo.');
     } finally {
       setPhotoBusy(false);
       event.target.value = '';
@@ -181,13 +252,16 @@ export default function SharedNightSky() {
             }}
           />
           <div className="pointer-events-none absolute inset-0 opacity-70">
-            {Array.from({ length: 44 }).map((_, index) => (
-              <motion.span
-                key={index}
-                className="absolute h-1 w-1 rounded-full bg-white"
-                style={{ left: `${(index * 19) % 100}%`, top: `${(index * 31) % 96}%` }}
-                animate={{ opacity: [0.18, 0.9, 0.18], scale: [1, 1.8, 1] }}
-                transition={{ duration: 2.8 + (index % 6), repeat: Infinity, delay: index * 0.05 }}
+            {backgroundStars.map((star) => (
+              <span
+                key={star.id}
+                className="sky-spark absolute h-1 w-1 rounded-full bg-white"
+                style={{
+                  left: `${star.left}%`,
+                  top: `${star.top}%`,
+                  animationDelay: `${star.delay}s`,
+                  animationDuration: `${star.duration}s`,
+                }}
               />
             ))}
           </div>
@@ -257,7 +331,7 @@ export default function SharedNightSky() {
                 >
                   <motion.span
                     className={`absolute rounded-full ${connected ? 'h-20 w-20 border border-blush/50 bg-blush/10' : 'h-10 w-10 bg-white/5'}`}
-                    animate={{ scale: connected ? [1, 1.16, 1] : [1, 1.08, 1], opacity: connected ? [0.4, 0.9, 0.4] : [0.25, 0.65, 0.25] }}
+                    animate={liteEffects ? false : { scale: connected ? [1, 1.16, 1] : [1, 1.08, 1], opacity: connected ? [0.4, 0.9, 0.4] : [0.25, 0.65, 0.25] }}
                     transition={{ duration: connected ? 2.1 : 3.4, repeat: Infinity }}
                   />
                   <span className={`relative h-3.5 w-3.5 rounded-full ${connected ? 'bg-blush' : 'bg-white'} shadow-[0_0_22px_rgba(255,255,255,.9)]`} />
@@ -275,7 +349,7 @@ export default function SharedNightSky() {
                   key={lantern.id || lantern.userId}
                   className="pointer-events-none absolute"
                   style={{ left: `${16 + index * 18}%`, top: `${64 + (index % 2) * 10}%` }}
-                  animate={{ y: [0, -18, 0], x: [0, 8, 0] }}
+                  animate={liteEffects ? false : { y: [0, -18, 0], x: [0, 8, 0] }}
                   transition={{ duration: 6 + index, repeat: Infinity, ease: 'easeInOut' }}
                 >
                   <div className="h-14 w-10 rounded-full border border-white/15" style={{ background: mood.glow, boxShadow: `0 0 36px ${mood.glow}` }} />
@@ -353,7 +427,7 @@ export default function SharedNightSky() {
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setMoodLantern(coupleId, user, key)}
+                    onClick={() => onMood(key)}
                     className="min-h-10 rounded-full border border-white/10 px-3 py-2 text-xs text-pink-100 transition hover:border-blush/70"
                     style={{ boxShadow: `0 0 18px ${mood.glow}` }}
                   >
@@ -365,8 +439,8 @@ export default function SharedNightSky() {
             <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
               <p className="text-xs uppercase tracking-[0.16em] text-roseGold">Sleep Together Mode</p>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                <ActionButton icon={<Bed size={15} />} label="Goodnight" onClick={() => setSleepState(coupleId, user, true)} />
-                <ActionButton icon={<Sun size={15} />} label="Good morning" onClick={() => setSleepState(coupleId, user, false)} />
+                <ActionButton icon={<Bed size={15} />} label="Goodnight" onClick={() => onSleep(true)} />
+                <ActionButton icon={<Sun size={15} />} label="Good morning" onClick={() => onSleep(false)} />
               </div>
               <p className="mt-3 text-xs text-pink-100/65">{sleeping ? 'The universe is resting with you.' : 'The universe is awake and glowing.'}</p>
             </div>
