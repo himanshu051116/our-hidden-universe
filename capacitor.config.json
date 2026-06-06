@@ -1,5 +1,32 @@
 {
   "appId": "com.ourhiddenuniverse.app",
-  "appName": "our-hidden-universe",
-  "webDir": "dist"
+  "appName": "OHS",
+  "webDir": "dist",
+  "backgroundColor": "#05040a",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#05040a"
+  },
+  "plugins": {
+    "App": {
+      "disableBackButtonHandler": true
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#05040a"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "backgroundColor": "#05040a",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": false,
+      "splashImmersive": false
+    },
+    "Keyboard": {
+      "resizeOnFullScreen": true
+    }
+  }
 }

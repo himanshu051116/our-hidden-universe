@@ -30,6 +30,26 @@ body {
   font-family: 'Manrope', 'Trebuchet MS', sans-serif;
 }
 
+html.native-app body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+html.native-app input,
+html.native-app textarea,
+html.native-app [contenteditable='true'] {
+  user-select: text;
+}
+
+html.native-app .cinematic-bg {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+
+body.native-keyboard-open .app-bottom-nav {
+  display: none;
+}
+
 body.theme-aurora .cinematic-bg {
   background:
     radial-gradient(circle at var(--cursor-x) var(--cursor-y), rgba(174, 234, 255, 0.16), transparent 18rem),

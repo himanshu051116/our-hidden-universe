@@ -152,7 +152,7 @@ function BottomNav({ visible, logout, onResetData, resetBusy }) {
       initial={false}
       animate={{ y: visible ? 0 : 120, opacity: visible ? 1 : 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
+      className="app-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/92 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl"
     >
       <div className="relative mx-auto flex max-w-lg items-stretch justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 sm:gap-2">
         <BottomNavLink to="/universe/home" icon={<Home size={19} />} label="Home" />

@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import StarField from './components/StarField.jsx';
+import useNativeApp from './hooks/useNativeApp.js';
 
 const BirthdaySurprise = lazy(() => import('./pages/BirthdaySurprise.jsx'));
 const BirthdaySurpriseEditor = lazy(() =>
@@ -28,6 +29,7 @@ function RouteFallback() {
 
 export default function App() {
   const location = useLocation();
+  useNativeApp();
 
   useEffect(() => {
     if (!location.hash) return;

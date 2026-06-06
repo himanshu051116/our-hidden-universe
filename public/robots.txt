@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /universe
+Disallow: /birthday-surprise
+
+Sitemap: https://ohs.vercel.app/sitemap.xml

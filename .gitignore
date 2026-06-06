@@ -73,3 +73,7 @@ dist/
 .dataconnect
 
 .vercel
+
+# Local Android build tools
+.tools/
+*.apk
