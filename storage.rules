@@ -1,15 +1,61 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    match /couples/{coupleId}/{allPaths=**} {
-      allow read: if request.auth != null
-        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid));
-      allow create, update: if request.auth != null
-        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid))
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function coupleMember(coupleId) {
+      return signedIn()
+        && firestore.exists(
+          /databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid)
+        );
+    }
+
+    match /couples/{coupleId}/messages/{senderId}/{fileName} {
+      allow read: if coupleMember(coupleId);
+      allow create, update: if coupleMember(coupleId)
+        && request.auth.uid == senderId
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('^(image|audio)/.*');
-      allow delete: if request.auth != null
-        && firestore.exists(/databases/(default)/documents/couples/$(coupleId)/members/$(request.auth.uid));
+      allow delete: if coupleMember(coupleId)
+        && (request.auth.uid == senderId
+          || firestore.get(
+            /databases/(default)/documents/couples/$(coupleId)
+          ).data.createdBy == request.auth.uid);
+    }
+
+    match /couples/{coupleId}/right-now/{senderId}/{fileName} {
+      allow read: if coupleMember(coupleId);
+      allow create, update: if coupleMember(coupleId)
+        && request.auth.uid == senderId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('^image/.*');
+      allow delete: if coupleMember(coupleId)
+        && (request.auth.uid == senderId
+          || firestore.get(
+            /databases/(default)/documents/couples/$(coupleId)
+          ).data.createdBy == request.auth.uid);
+    }
+
+    // Retained for current/future memory uploads. Keep video limits bounded.
+    match /couples/{coupleId}/memories/{senderId}/{fileName} {
+      allow read: if coupleMember(coupleId);
+      allow create, update: if coupleMember(coupleId)
+        && request.auth.uid == senderId
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('^(image|audio|video)/.*');
+      allow delete: if coupleMember(coupleId)
+        && (request.auth.uid == senderId
+          || firestore.get(
+            /databases/(default)/documents/couples/$(coupleId)
+          ).data.createdBy == request.auth.uid);
+    }
+
+    // Deny any unrecognized couple-storage layout by default.
+    match /couples/{coupleId}/{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { db, firebaseEnabled } from './firebase.js';
 
@@ -60,24 +61,19 @@ export function subscribeCoupleMembers(coupleId, onChange, onError) {
   if (!firebaseEnabled || !coupleId) return undefined;
   return onSnapshot(
     collection(db, 'couples', coupleId, 'members'),
-    (snapshot) => {
-      onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
-    },
-    (error) => {
-      onError?.(error);
-    },
+    (snapshot) => onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))),
+    (error) => onError?.(error),
   );
 }
 
 export async function touchMemberPresence(coupleId, user) {
   if (!firebaseEnabled || !coupleId || !user?.uid) return;
-  await setDoc(
+  await updateDoc(
     doc(db, 'couples', coupleId, 'members', user.uid),
     {
       displayName: user.displayName || user.email || 'You',
       lastActiveAt: serverTimestamp(),
     },
-    { merge: true },
   );
 }
 
@@ -140,9 +136,7 @@ export function subscribeOpenWhen(coupleId, onChange, onError) {
 
   return onSnapshot(
     collection(db, 'couples', coupleId, 'openWhen'),
-    (snapshot) => {
-      onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
-    },
+    (snapshot) => onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))),
     (error) => onError?.(error),
   );
 }
@@ -163,6 +157,7 @@ export async function saveOpenWhen(coupleId, user, item) {
   }
 
   await touchMemberPresence(coupleId, user);
+
   await setDoc(
     doc(db, 'couples', coupleId, 'openWhen', item.id),
     {

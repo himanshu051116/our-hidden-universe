@@ -6,17 +6,92 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function roomExists(coupleId) {
-      return exists(/databases/$(database)/documents/couples/$(coupleId));
-    }
-
-    function roomExistsAfterWrite(coupleId) {
-      return getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.code == coupleId;
-    }
-
     function coupleMember(coupleId) {
       return signedIn()
         && exists(/databases/$(database)/documents/couples/$(coupleId)/members/$(request.auth.uid));
+    }
+
+    function roomHasMemberAfter(coupleId, userId) {
+      return getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.memberIds is list
+        && getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.memberIds.hasAny([userId]);
+    }
+
+    function validRoomCreate(coupleId) {
+      return request.resource.data.keys().hasOnly([
+          'code',
+          'displayCode',
+          'createdBy',
+          'createdAt',
+          'updatedAt',
+          'memberIds',
+          'memberCount'
+        ])
+        && request.resource.data.code == coupleId
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() == 1
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberCount == 1;
+    }
+
+    function validLegacyMembershipMigration() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return signedIn()
+        && !resource.data.keys().hasAny(['memberIds', 'memberCount'])
+        && changed.hasOnly(['memberIds', 'memberCount', 'updatedAt'])
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() >= 1
+        && request.resource.data.memberIds.size() <= 2
+        && request.resource.data.memberIds.hasAny([resource.data.createdBy])
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberCount == request.resource.data.memberIds.size();
+    }
+
+    function validSecondMemberJoin() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return signedIn()
+        && resource.data.memberIds is list
+        && resource.data.memberIds.size() == 1
+        && !resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() == 2
+        && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+        && request.resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberCount == 2
+        && changed.hasOnly(['memberIds', 'memberCount', 'updatedAt']);
+    }
+
+    function validMemberCreate(coupleId, userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && roomHasMemberAfter(coupleId, userId)
+        && request.resource.data.keys().hasOnly([
+          'joinedAt',
+          'role',
+          'lastActiveAt',
+          'isTyping',
+          'displayName'
+        ])
+        && (
+          (
+            getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.createdBy == userId
+            && request.resource.data.role == 'creator'
+          )
+          ||
+          (
+            getAfter(/databases/$(database)/documents/couples/$(coupleId)).data.createdBy != userId
+            && request.resource.data.role == 'partner'
+          )
+        );
+    }
+
+    function validMemberUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['lastActiveAt', 'isTyping', 'displayName'])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.joinedAt == resource.data.joinedAt;
     }
 
     function validSeenState() {
@@ -98,24 +173,172 @@ service cloud.firestore {
         && changed.hasOnly(['seenBy', 'seenAtBy', 'reactions']);
     }
 
+    function callParticipant() {
+      return resource.data.callerId == request.auth.uid
+        || resource.data.calleeId == request.auth.uid;
+    }
+
+    function validCallStatus(value) {
+      return value == 'creating'
+        || value == 'ringing'
+        || value == 'connecting'
+        || value == 'connected'
+        || value == 'reconnecting'
+        || value == 'declined'
+        || value == 'missed'
+        || value == 'ended'
+        || value == 'failed';
+    }
+
+    function validCallTransition() {
+      let before = resource.data.status;
+      let after = request.resource.data.status;
+
+      return before == after
+        || (before == 'creating' && after == 'ringing' && request.auth.uid == resource.data.callerId)
+        || (before == 'creating' && after == 'ended' && request.auth.uid == resource.data.callerId)
+        || (before == 'creating' && after == 'failed' && request.auth.uid == resource.data.callerId)
+        || (before == 'ringing' && after == 'connecting' && request.auth.uid == resource.data.calleeId)
+        || (before == 'ringing' && after == 'declined' && request.auth.uid == resource.data.calleeId)
+        || (before == 'ringing' && after == 'missed' && request.auth.uid == resource.data.callerId)
+        || (before == 'ringing' && after == 'ended' && request.auth.uid == resource.data.callerId)
+        || (before == 'connecting' && (after == 'connected' || after == 'reconnecting' || after == 'ended' || after == 'failed'))
+        || (before == 'connected' && (after == 'reconnecting' || after == 'ended' || after == 'failed'))
+        || (before == 'reconnecting' && (after == 'connecting' || after == 'connected' || after == 'ended' || after == 'failed'));
+    }
+
+    function validCallUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return request.resource.data.callerId == resource.data.callerId
+        && request.resource.data.calleeId == resource.data.calleeId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validCallStatus(request.resource.data.status)
+        && validCallTransition()
+        && changed.hasOnly([
+          'offer',
+          'answer',
+          'status',
+          'expiresAt',
+          'answeredAt',
+          'connectedAt',
+          'endedAt',
+          'endedBy',
+          'endReason',
+          'restartRevision',
+          'restartRequestedBy',
+          'restartOffer',
+          'restartAnswer',
+          'restartStartedAt'
+        ])
+        && (
+          !changed.hasAny(['offer'])
+          || request.auth.uid == resource.data.callerId
+        )
+        && (
+          !changed.hasAny(['answer'])
+          || request.auth.uid == resource.data.calleeId
+        )
+        && (
+          !changed.hasAny(['expiresAt'])
+          || (
+            request.auth.uid == resource.data.calleeId
+            && resource.data.status == 'ringing'
+            && request.resource.data.expiresAt == null
+          )
+        )
+        && (
+          !changed.hasAny(['restartOffer', 'restartRevision'])
+          || request.auth.uid == resource.data.callerId
+        )
+        && (
+          !changed.hasAny(['restartAnswer'])
+          || request.auth.uid == resource.data.calleeId
+          || (
+            request.auth.uid == resource.data.callerId
+            && request.resource.data.restartAnswer == null
+          )
+        )
+        && (
+          !changed.hasAny(['restartRequestedBy'])
+          || request.resource.data.restartRequestedBy == null
+          || request.resource.data.restartRequestedBy == request.auth.uid
+        )
+        && (
+          !changed.hasAny(['endedBy'])
+          || request.resource.data.endedBy == null
+          || request.resource.data.endedBy == request.auth.uid
+        );
+    }
+
+    function validIceCandidate() {
+      return request.resource.data.keys().hasOnly([
+          'candidate',
+          'sdpMid',
+          'sdpMLineIndex',
+          'usernameFragment',
+          'revision'
+        ])
+        && request.resource.data.candidate is string
+        && request.resource.data.revision is number;
+    }
+
     match /couples/{coupleId} {
-      allow get: if signedIn();
+      allow get: if signedIn()
+        && (
+          coupleMember(coupleId)
+          || !resource.data.keys().hasAny(['memberCount'])
+          || resource.data.memberCount < 2
+        );
       allow list: if false;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['code', 'displayCode', 'createdBy', 'createdAt', 'updatedAt'])
-        && request.resource.data.code == coupleId
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if coupleMember(coupleId);
+
+      allow create: if signedIn() && validRoomCreate(coupleId);
+
+      allow update: if validLegacyMembershipMigration() || validSecondMemberJoin();
+
+      allow delete: if coupleMember(coupleId)
+        && resource.data.createdBy == request.auth.uid;
 
       match /members/{userId} {
         allow get: if signedIn() && (request.auth.uid == userId || coupleMember(coupleId));
         allow list: if coupleMember(coupleId);
-        allow create: if signedIn()
+        allow create: if validMemberCreate(coupleId, userId);
+        allow update: if signedIn()
           && request.auth.uid == userId
-          && (roomExists(coupleId) || roomExistsAfterWrite(coupleId))
-          && request.resource.data.keys().hasOnly(['joinedAt', 'role', 'lastActiveAt', 'isTyping', 'displayName']);
-        allow update: if signedIn() && request.auth.uid == userId && (roomExists(coupleId) || coupleMember(coupleId));
-        allow delete: if coupleMember(coupleId) || (signedIn() && request.auth.uid == userId);
+          && coupleMember(coupleId)
+          && validMemberUpdate();
+        allow delete: if false;
+
+        match /devices/{deviceId} {
+          allow get, list: if signedIn()
+            && request.auth.uid == userId
+            && coupleMember(coupleId);
+
+          allow create, update: if signedIn()
+            && request.auth.uid == userId
+            && coupleMember(coupleId)
+            && request.resource.data.keys().hasOnly([
+              'targetId',
+              'targetType',
+              'platform',
+              'enabled',
+              'updatedAt'
+            ])
+            && request.resource.data.targetId is string
+            && request.resource.data.targetId.size() > 10
+            && request.resource.data.targetId.size() < 4096
+            && (
+              request.resource.data.targetType == 'fid'
+              || request.resource.data.targetType == 'token'
+            )
+            && request.resource.data.platform is string
+            && request.resource.data.enabled is bool;
+
+          allow delete: if signedIn()
+            && request.auth.uid == userId
+            && coupleMember(coupleId);
+        }
       }
 
       match /messages/{messageId} {
@@ -171,6 +394,134 @@ service cloud.firestore {
 
       match /rightNowPhotos/{itemId} {
         allow read, write: if coupleMember(coupleId);
+      }
+
+      match /calls/{callId} {
+        allow create: if coupleMember(coupleId)
+          && request.resource.data.keys().hasOnly([
+            'callerId',
+            'calleeId',
+            'type',
+            'status',
+            'offer',
+            'answer',
+            'createdAt',
+            'expiresAt',
+            'answeredAt',
+            'connectedAt',
+            'endedAt',
+            'endedBy',
+            'endReason',
+            'restartRevision',
+            'restartRequestedBy',
+            'restartOffer',
+            'restartAnswer',
+            'restartStartedAt'
+          ])
+          && request.resource.data.callerId == request.auth.uid
+          && request.resource.data.calleeId != request.auth.uid
+          && exists(/databases/$(database)/documents/couples/$(coupleId)/members/$(request.resource.data.calleeId))
+          && request.resource.data.status == 'creating'
+          && (request.resource.data.type == 'audio' || request.resource.data.type == 'video')
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.restartRevision == 0;
+
+        allow read: if coupleMember(coupleId) && callParticipant();
+
+        allow update: if coupleMember(coupleId)
+          && callParticipant()
+          && validCallUpdate();
+
+        allow delete: if coupleMember(coupleId) && callParticipant();
+
+        match /callerCandidates/{candidateId} {
+          allow read: if coupleMember(coupleId)
+            && get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.calleeId == request.auth.uid;
+
+          allow create: if coupleMember(coupleId)
+            && get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.callerId == request.auth.uid
+            && validIceCandidate();
+
+          allow update: if false;
+
+          allow delete: if coupleMember(coupleId)
+            && (
+              get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.callerId == request.auth.uid
+              || get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.calleeId == request.auth.uid
+            );
+        }
+
+        match /calleeCandidates/{candidateId} {
+          allow read: if coupleMember(coupleId)
+            && get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.callerId == request.auth.uid;
+
+          allow create: if coupleMember(coupleId)
+            && get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.calleeId == request.auth.uid
+            && validIceCandidate();
+
+          allow update: if false;
+
+          allow delete: if coupleMember(coupleId)
+            && (
+              get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.callerId == request.auth.uid
+              || get(/databases/$(database)/documents/couples/$(coupleId)/calls/$(callId)).data.calleeId == request.auth.uid
+            );
+        }
+      }
+
+      match /callHistory/{historyId} {
+        allow read: if coupleMember(coupleId);
+
+        allow create: if coupleMember(coupleId)
+          && request.resource.data.keys().hasOnly([
+            'callerId',
+            'calleeId',
+            'type',
+            'result',
+            'startedAt',
+            'connectedAt',
+            'durationSeconds',
+            'endedAt'
+          ])
+          && (
+            request.resource.data.callerId == request.auth.uid
+            || request.resource.data.calleeId == request.auth.uid
+          )
+          && exists(/databases/$(database)/documents/couples/$(coupleId)/members/$(request.resource.data.callerId))
+          && exists(/databases/$(database)/documents/couples/$(coupleId)/members/$(request.resource.data.calleeId))
+          && request.resource.data.callerId != request.resource.data.calleeId
+          && (request.resource.data.type == 'audio' || request.resource.data.type == 'video')
+          && (
+            request.resource.data.result == 'completed'
+            || request.resource.data.result == 'declined'
+            || request.resource.data.result == 'missed'
+            || request.resource.data.result == 'failed'
+            || request.resource.data.result == 'cancelled'
+          )
+          && request.resource.data.durationSeconds is number
+          && request.resource.data.durationSeconds >= 0;
+
+        allow update: if coupleMember(coupleId)
+          && (
+            resource.data.callerId == request.auth.uid
+            || resource.data.calleeId == request.auth.uid
+          )
+          && request.resource.data.callerId == resource.data.callerId
+          && request.resource.data.calleeId == resource.data.calleeId
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'result',
+            'startedAt',
+            'connectedAt',
+            'durationSeconds',
+            'endedAt'
+          ]);
+
+        allow delete: if coupleMember(coupleId)
+          && (
+            resource.data.callerId == request.auth.uid
+            || resource.data.calleeId == request.auth.uid
+          );
       }
     }
   }
