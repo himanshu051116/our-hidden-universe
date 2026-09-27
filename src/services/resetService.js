@@ -13,6 +13,7 @@ const demoKeys = [
   'ohu-night-sky-v1',
   'ohu-now-photos-v1',
 ];
+
 const collectionNames = [
   'messages',
   'memories',
@@ -27,6 +28,7 @@ const collectionNames = [
   'skyStats',
   'starTouches',
   'rightNowPhotos',
+  'callHistory',
 ];
 
 function clearLocalDemoState() {
@@ -37,6 +39,26 @@ async function deleteCollection(coupleId, name) {
   const snapshot = await getDocs(collection(db, 'couples', coupleId, name));
   await Promise.all(snapshot.docs.map((entry) => deleteDoc(doc(db, 'couples', coupleId, name, entry.id))));
   return snapshot.size;
+}
+
+async function deleteCallData(coupleId) {
+  const calls = await getDocs(collection(db, 'couples', coupleId, 'calls'));
+  let deleted = 0;
+
+  for (const call of calls.docs) {
+    for (const candidateCollection of ['callerCandidates', 'calleeCandidates']) {
+      const candidates = await getDocs(
+        collection(db, 'couples', coupleId, 'calls', call.id, candidateCollection),
+      );
+      await Promise.all(candidates.docs.map((candidate) => deleteDoc(candidate.ref)));
+      deleted += candidates.size;
+    }
+
+    await deleteDoc(call.ref);
+    deleted += 1;
+  }
+
+  return deleted;
 }
 
 async function deleteStorageFolder(folderPath) {
@@ -63,14 +85,18 @@ async function deleteStorageFolder(folderPath) {
 
 export async function resetCoupleData(coupleId) {
   clearLocalDemoState();
+
   if (!firebaseEnabled || !coupleId) {
     return { deletedDocs: 0, deletedFiles: 0, mode: 'local' };
   }
 
   let deletedDocs = 0;
+
   for (const name of collectionNames) {
     deletedDocs += await deleteCollection(coupleId, name);
   }
+
+  deletedDocs += await deleteCallData(coupleId);
 
   const deletedFiles = await deleteStorageFolder(`couples/${coupleId}`);
   return { deletedDocs, deletedFiles, mode: 'firebase' };

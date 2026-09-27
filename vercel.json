@@ -28,6 +28,12 @@
       ]
     }
   ],
+  "crons": [
+    {
+      "path": "/api/calls-cleanup",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

@@ -6,7 +6,13 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth';
-import { doc, getDoc, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+} from 'firebase/firestore';
 import { auth, db, firebaseEnabled } from '../services/firebase';
 
 const AuthContext = createContext(null);
@@ -41,9 +47,7 @@ async function signInOrCreateUser(email, password) {
     const credential = await signInWithEmailAndPassword(auth, email, password);
     return { credential, created: false };
   } catch (error) {
-    if (!isMissingAccountError(error)) {
-      throw error;
-    }
+    if (!isMissingAccountError(error)) throw error;
 
     try {
       const credential = await createUserWithEmailAndPassword(auth, email, password);
@@ -55,6 +59,13 @@ async function signInOrCreateUser(email, password) {
       throw createError;
     }
   }
+}
+
+function normalizeMemberIds(roomData) {
+  if (Array.isArray(roomData?.memberIds) && roomData.memberIds.length) {
+    return [...new Set(roomData.memberIds.filter(Boolean))];
+  }
+  return roomData?.createdBy ? [roomData.createdBy] : [];
 }
 
 export function AuthProvider({ children }) {
@@ -70,20 +81,23 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  // Session restore may refresh presence, but it must never create membership
+  // or overwrite creator/partner role.
   useEffect(() => {
     if (!firebaseEnabled || !user?.uid || !coupleCode) return;
-    setDoc(
-      doc(db, 'couples', coupleCode, 'members', user.uid),
-      {
-        joinedAt: serverTimestamp(),
-        role: 'partner',
-        lastActiveAt: serverTimestamp(),
-      },
-      { merge: true },
-    ).catch(() => {
-      // The login screen handles invalid or missing rooms; this just repairs stale sessions.
-    });
-  }, [user?.uid, coupleCode]);
+
+    const memberRef = doc(db, 'couples', coupleCode, 'members', user.uid);
+
+    getDoc(memberRef)
+      .then((snapshot) => {
+        if (!snapshot.exists()) return;
+        return updateDoc(memberRef, {
+          lastActiveAt: serverTimestamp(),
+          displayName: user.displayName || user.email || 'You',
+        });
+      })
+      .catch(() => {});
+  }, [user?.uid, user?.displayName, user?.email, coupleCode]);
 
   async function login(email, password, accessCode, mode = 'login') {
     if (!firebaseEnabled) {
@@ -116,17 +130,19 @@ export function AuthProvider({ children }) {
             createdBy: credential.user.uid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
+            memberIds: [credential.user.uid],
+            memberCount: 1,
           });
+
           transaction.set(memberRef, {
             joinedAt: serverTimestamp(),
             role: 'creator',
             lastActiveAt: serverTimestamp(),
+            displayName: credential.user.displayName || credential.user.email || 'You',
           });
         });
       } catch (error) {
-        if (created) {
-          await deleteUser(credential.user);
-        }
+        if (created) await deleteUser(credential.user);
         await signOut(auth);
         throw error;
       }
@@ -144,39 +160,58 @@ export function AuthProvider({ children }) {
 
     const { credential, created } = await signInOrCreateUser(email, password);
     const roomRef = doc(db, 'couples', roomCode);
-    let roomSnapshot;
-    try {
-      roomSnapshot = await getDoc(roomRef);
-    } catch (error) {
-      if (created) {
-        await deleteUser(credential.user);
-      }
-      await signOut(auth);
-      throw new Error(
-        error?.message ||
-          'Unable to check the couple room. Make sure the Firestore database exists and rules are deployed.',
-      );
-    }
-
-    if (!roomSnapshot.exists()) {
-      if (created) {
-        await deleteUser(credential.user);
-      }
-      await signOut(auth);
-      throw new Error('No private room was found for that couple code.');
-    }
+    const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
 
     try {
-      await setDoc(
-        doc(db, 'couples', roomCode, 'members', credential.user.uid),
-        {
-          joinedAt: serverTimestamp(),
-          role: roomSnapshot.data().createdBy === credential.user.uid ? 'creator' : 'partner',
-          lastActiveAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
+      await runTransaction(db, async (transaction) => {
+        const roomSnapshot = await transaction.get(roomRef);
+
+        if (!roomSnapshot.exists()) {
+          throw new Error('No private room was found for that couple code.');
+        }
+
+        const memberSnapshot = await transaction.get(memberRef);
+        const room = roomSnapshot.data();
+        const memberIds = normalizeMemberIds(room);
+        const alreadyMember = memberIds.includes(credential.user.uid);
+
+        if (!alreadyMember) {
+          if (memberIds.length >= 2) {
+            throw new Error('This private room already has two members.');
+          }
+
+          memberIds.push(credential.user.uid);
+
+          transaction.update(roomRef, {
+            memberIds,
+            memberCount: memberIds.length,
+            updatedAt: serverTimestamp(),
+          });
+        } else if (!Array.isArray(room.memberIds) || room.memberCount !== memberIds.length) {
+          // One-time migration for legacy rooms.
+          transaction.update(roomRef, {
+            memberIds,
+            memberCount: memberIds.length,
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        if (memberSnapshot.exists()) {
+          transaction.update(memberRef, {
+            lastActiveAt: serverTimestamp(),
+            displayName: credential.user.displayName || credential.user.email || 'You',
+          });
+        } else {
+          transaction.set(memberRef, {
+            joinedAt: serverTimestamp(),
+            role: room.createdBy === credential.user.uid ? 'creator' : 'partner',
+            lastActiveAt: serverTimestamp(),
+            displayName: credential.user.displayName || credential.user.email || 'You',
+          });
+        }
+      });
     } catch (error) {
+      if (created) await deleteUser(credential.user);
       await signOut(auth);
       throw error;
     }
