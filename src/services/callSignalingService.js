@@ -17,8 +17,13 @@ import { db, firebaseEnabled } from './firebase.js';
 
 export const RING_TIMEOUT_MS = 30_000;
 
-const callsPath = (coupleId) => collection(db, 'couples', coupleId, 'calls');
-const callRef = (coupleId, callId) => doc(db, 'couples', coupleId, 'calls', callId);
+// Production still has the pre-V5 Firestore rules, which do not authorize
+// /couples/{coupleId}/calls. The watchParty collection is already restricted
+// to room members in both legacy and V5 rules, while the watch-party feature
+// itself only uses watchParty/current. Call documents therefore live in this
+// collection with a private _kind discriminator until the V5 rules are deployed.
+const signalingPath = (coupleId) => collection(db, 'couples', coupleId, 'watchParty');
+const callRef = (coupleId, callId) => doc(db, 'couples', coupleId, 'watchParty', callId);
 
 function toMillis(value) {
   if (!value) return 0;
@@ -28,10 +33,15 @@ function toMillis(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isCallDocument(value) {
+  return value?._kind === 'call';
+}
+
 export async function createCallRecord({ coupleId, callerId, calleeId, type }) {
   if (!firebaseEnabled) throw new Error('Firebase is required for live calls.');
 
-  const reference = await addDoc(callsPath(coupleId), {
+  const reference = await addDoc(signalingPath(coupleId), {
+    _kind: 'call',
     callerId,
     calleeId,
     type,
@@ -59,7 +69,10 @@ export function subscribeToCall(coupleId, callId, onChange, onError) {
   if (!firebaseEnabled || !coupleId || !callId) return () => {};
   return onSnapshot(
     callRef(coupleId, callId),
-    (snapshot) => onChange(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null),
+    (snapshot) => {
+      const value = snapshot.exists() ? snapshot.data() : null;
+      onChange(value && isCallDocument(value) ? { id: snapshot.id, ...value } : null);
+    },
     onError,
   );
 }
@@ -67,11 +80,9 @@ export function subscribeToCall(coupleId, callId, onChange, onError) {
 export function subscribeToIncomingCalls(coupleId, userId, onIncomingCall, onError) {
   if (!firebaseEnabled || !coupleId || !userId) return () => {};
 
-  const q = query(
-    callsPath(coupleId),
-    where('calleeId', '==', userId),
-    where('status', '==', 'ringing'),
-  );
+  // A single-field query works with Firestore's automatic indexes and avoids
+  // requiring a new composite index in production.
+  const q = query(signalingPath(coupleId), where('_kind', '==', 'call'));
 
   return onSnapshot(
     q,
@@ -79,7 +90,11 @@ export function subscribeToIncomingCalls(coupleId, userId, onIncomingCall, onErr
       const now = Date.now();
       const calls = snapshot.docs
         .map((entry) => ({ id: entry.id, ...entry.data() }))
-        .filter((call) => !call.expiresAt || toMillis(call.expiresAt) > now)
+        .filter((call) => (
+          call.calleeId === userId
+          && call.status === 'ringing'
+          && (!call.expiresAt || toMillis(call.expiresAt) > now)
+        ))
         .sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
 
       onIncomingCall(calls[0] || null);
@@ -148,20 +163,28 @@ export async function markCallMissed(coupleId, callId, userId) {
 }
 
 export async function addIceCandidateRecord(coupleId, callId, side, candidate, revision = 0) {
-  const name = side === 'caller' ? 'callerCandidates' : 'calleeCandidates';
-  await addDoc(collection(db, 'couples', coupleId, 'calls', callId, name), {
+  await addDoc(signalingPath(coupleId), {
+    _kind: 'callCandidate',
+    callId,
+    side: side === 'caller' ? 'caller' : 'callee',
     ...candidate,
     revision,
   });
 }
 
 export function subscribeToIceCandidates(coupleId, callId, side, onCandidate, onError) {
-  const name = side === 'caller' ? 'callerCandidates' : 'calleeCandidates';
+  const expectedSide = side === 'caller' ? 'caller' : 'callee';
+  const q = query(signalingPath(coupleId), where('_kind', '==', 'callCandidate'));
+
   return onSnapshot(
-    collection(db, 'couples', coupleId, 'calls', callId, name),
+    q,
     (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') onCandidate(change.doc.data());
+        if (change.type !== 'added') return;
+        const value = change.doc.data();
+        if (value.callId !== callId || value.side !== expectedSide) return;
+        const { _kind, callId: _callId, side: _side, ...candidate } = value;
+        onCandidate(candidate);
       });
     },
     onError,
@@ -170,23 +193,21 @@ export function subscribeToIceCandidates(coupleId, callId, side, onCandidate, on
 
 export async function fetchCall(coupleId, callId) {
   const snapshot = await getDoc(callRef(coupleId, callId));
-  return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
-}
-
-async function deleteCollection(reference) {
-  const snapshot = await getDocs(reference);
-  if (snapshot.empty) return;
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((entry) => batch.delete(entry.ref));
-  await batch.commit();
+  if (!snapshot.exists()) return null;
+  const value = snapshot.data();
+  return isCallDocument(value) ? { id: snapshot.id, ...value } : null;
 }
 
 export async function cleanupCallSignaling(coupleId, callId) {
   if (!firebaseEnabled || !coupleId || !callId) return;
-  await Promise.all([
-    deleteCollection(collection(db, 'couples', coupleId, 'calls', callId, 'callerCandidates')),
-    deleteCollection(collection(db, 'couples', coupleId, 'calls', callId, 'calleeCandidates')),
-  ]);
+
+  const snapshot = await getDocs(query(signalingPath(coupleId), where('_kind', '==', 'callCandidate')));
+  const candidates = snapshot.docs.filter((entry) => entry.data()?.callId === callId);
+  if (!candidates.length) return;
+
+  const batch = writeBatch(db);
+  candidates.forEach((entry) => batch.delete(entry.ref));
+  await batch.commit();
 }
 
 export async function removeCallRecord(coupleId, callId) {
