@@ -12,12 +12,23 @@ export function createPeerConnection({
     bundlePolicy: 'max-bundle',
   });
 
+  const fallbackRemoteStream = new MediaStream();
+
   peer.onicecandidate = (event) => {
     if (event.candidate) onIceCandidate?.(event.candidate.toJSON());
   };
 
   peer.ontrack = (event) => {
-    onTrack?.(event.streams?.[0] || new MediaStream([event.track]));
+    const providedStream = event.streams?.[0];
+    if (providedStream) {
+      onTrack?.(providedStream);
+      return;
+    }
+
+    if (!fallbackRemoteStream.getTracks().some((track) => track.id === event.track.id)) {
+      fallbackRemoteStream.addTrack(event.track);
+    }
+    onTrack?.(fallbackRemoteStream);
   };
 
   peer.onconnectionstatechange = () => {
