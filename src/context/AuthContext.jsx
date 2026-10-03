@@ -9,7 +9,6 @@ import {
 import {
   doc,
   getDoc,
-  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
@@ -61,11 +60,33 @@ async function signInOrCreateUser(email, password) {
   }
 }
 
-function normalizeMemberIds(roomData) {
-  if (Array.isArray(roomData?.memberIds) && roomData.memberIds.length) {
-    return [...new Set(roomData.memberIds.filter(Boolean))];
+async function ensureRoomMembership(credential, roomCode, mode) {
+  const idToken = await credential.user.getIdToken();
+  const response = await fetch('/api/room-membership', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      mode,
+      coupleCode: roomCode,
+      displayName: credential.user.displayName || credential.user.email || 'You',
+    }),
+  });
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
   }
-  return roomData?.createdBy ? [roomData.createdBy] : [];
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to open the private room.');
+  }
+
+  return payload;
 }
 
 export function AuthProvider({ children }) {
@@ -114,36 +135,12 @@ export function AuthProvider({ children }) {
     if (mode === 'signup') {
       const { credential, created } = await signInOrCreateUser(email, password);
       const roomCode = requestedCode || normalizeCoupleCode(generateCoupleCode());
-      const roomRef = doc(db, 'couples', roomCode);
-      const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
 
       try {
-        await runTransaction(db, async (transaction) => {
-          const roomSnapshot = await transaction.get(roomRef);
-          if (roomSnapshot.exists()) {
-            throw new Error('That couple code is already taken. Please create a different one.');
-          }
-
-          transaction.set(roomRef, {
-            code: roomCode,
-            displayCode: formatCoupleCode(roomCode),
-            createdBy: credential.user.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            memberIds: [credential.user.uid],
-            memberCount: 1,
-          });
-
-          transaction.set(memberRef, {
-            joinedAt: serverTimestamp(),
-            role: 'creator',
-            lastActiveAt: serverTimestamp(),
-            displayName: credential.user.displayName || credential.user.email || 'You',
-          });
-        });
+        await ensureRoomMembership(credential, roomCode, 'signup');
       } catch (error) {
-        if (created) await deleteUser(credential.user);
-        await signOut(auth);
+        if (created) await deleteUser(credential.user).catch(() => {});
+        await signOut(auth).catch(() => {});
         throw error;
       }
 
@@ -159,60 +156,12 @@ export function AuthProvider({ children }) {
     }
 
     const { credential, created } = await signInOrCreateUser(email, password);
-    const roomRef = doc(db, 'couples', roomCode);
-    const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const roomSnapshot = await transaction.get(roomRef);
-
-        if (!roomSnapshot.exists()) {
-          throw new Error('No private room was found for that couple code.');
-        }
-
-        const memberSnapshot = await transaction.get(memberRef);
-        const room = roomSnapshot.data();
-        const memberIds = normalizeMemberIds(room);
-        const alreadyMember = memberIds.includes(credential.user.uid);
-
-        if (!alreadyMember) {
-          if (memberIds.length >= 2) {
-            throw new Error('This private room already has two members.');
-          }
-
-          memberIds.push(credential.user.uid);
-
-          transaction.update(roomRef, {
-            memberIds,
-            memberCount: memberIds.length,
-            updatedAt: serverTimestamp(),
-          });
-        } else if (!Array.isArray(room.memberIds) || room.memberCount !== memberIds.length) {
-          // One-time migration for legacy rooms.
-          transaction.update(roomRef, {
-            memberIds,
-            memberCount: memberIds.length,
-            updatedAt: serverTimestamp(),
-          });
-        }
-
-        if (memberSnapshot.exists()) {
-          transaction.update(memberRef, {
-            lastActiveAt: serverTimestamp(),
-            displayName: credential.user.displayName || credential.user.email || 'You',
-          });
-        } else {
-          transaction.set(memberRef, {
-            joinedAt: serverTimestamp(),
-            role: room.createdBy === credential.user.uid ? 'creator' : 'partner',
-            lastActiveAt: serverTimestamp(),
-            displayName: credential.user.displayName || credential.user.email || 'You',
-          });
-        }
-      });
+      await ensureRoomMembership(credential, roomCode, 'login');
     } catch (error) {
-      if (created) await deleteUser(credential.user);
-      await signOut(auth);
+      if (created) await deleteUser(credential.user).catch(() => {});
+      await signOut(auth).catch(() => {});
       throw error;
     }
 
