@@ -9,7 +9,9 @@ import {
 import {
   doc,
   getDoc,
+  runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db, firebaseEnabled } from '../services/firebase';
@@ -41,6 +43,16 @@ function isMissingAccountError(error) {
   return error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential';
 }
 
+function isPermissionDenied(error) {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code === 'permission-denied'
+    || code === 'firestore/permission-denied'
+    || message.includes('missing or insufficient permissions')
+  );
+}
+
 async function signInOrCreateUser(email, password) {
   try {
     const credential = await signInWithEmailAndPassword(auth, email, password);
@@ -60,33 +72,137 @@ async function signInOrCreateUser(email, password) {
   }
 }
 
-async function ensureRoomMembership(credential, roomCode, mode) {
-  const idToken = await credential.user.getIdToken();
-  const response = await fetch('/api/room-membership', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({
-      mode,
-      coupleCode: roomCode,
-      displayName: credential.user.displayName || credential.user.email || 'You',
-    }),
+function normalizeMemberIds(roomData) {
+  if (Array.isArray(roomData?.memberIds) && roomData.memberIds.length) {
+    return [...new Set(roomData.memberIds.filter(Boolean))];
+  }
+  return roomData?.createdBy ? [roomData.createdBy] : [];
+}
+
+function memberPayload(user, role) {
+  return {
+    joinedAt: serverTimestamp(),
+    role,
+    lastActiveAt: serverTimestamp(),
+    displayName: user.displayName || user.email || 'You',
+  };
+}
+
+async function createRoomV5(credential, roomCode) {
+  const roomRef = doc(db, 'couples', roomCode);
+  const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnapshot = await transaction.get(roomRef);
+    if (roomSnapshot.exists()) {
+      throw new Error('That couple code is already taken. Please create a different one.');
+    }
+
+    transaction.set(roomRef, {
+      code: roomCode,
+      displayCode: formatCoupleCode(roomCode),
+      createdBy: credential.user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      memberIds: [credential.user.uid],
+      memberCount: 1,
+    });
+
+    transaction.set(memberRef, memberPayload(credential.user, 'creator'));
   });
+}
 
-  let payload = {};
-  try {
-    payload = await response.json();
-  } catch {
-    payload = {};
+async function createRoomLegacy(credential, roomCode) {
+  const roomRef = doc(db, 'couples', roomCode);
+  const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnapshot = await transaction.get(roomRef);
+    if (roomSnapshot.exists()) {
+      throw new Error('That couple code is already taken. Please create a different one.');
+    }
+
+    transaction.set(roomRef, {
+      code: roomCode,
+      displayCode: formatCoupleCode(roomCode),
+      createdBy: credential.user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    transaction.set(memberRef, memberPayload(credential.user, 'creator'));
+  });
+}
+
+async function joinRoomV5(credential, roomCode) {
+  const roomRef = doc(db, 'couples', roomCode);
+  const memberRef = doc(db, 'couples', roomCode, 'members', credential.user.uid);
+
+  await runTransaction(db, async (transaction) => {
+    const roomSnapshot = await transaction.get(roomRef);
+    if (!roomSnapshot.exists()) {
+      throw new Error('No private room was found for that couple code.');
+    }
+
+    const memberSnapshot = await transaction.get(memberRef);
+    const room = roomSnapshot.data();
+    const memberIds = normalizeMemberIds(room);
+    const alreadyMember = memberIds.includes(credential.user.uid);
+
+    if (!alreadyMember) {
+      if (memberIds.length >= 2) {
+        throw new Error('This private room already has two members.');
+      }
+
+      memberIds.push(credential.user.uid);
+      transaction.update(roomRef, {
+        memberIds,
+        memberCount: memberIds.length,
+        updatedAt: serverTimestamp(),
+      });
+    } else if (!Array.isArray(room.memberIds) || room.memberCount !== memberIds.length) {
+      transaction.update(roomRef, {
+        memberIds,
+        memberCount: memberIds.length,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    if (memberSnapshot.exists()) {
+      transaction.update(memberRef, {
+        lastActiveAt: serverTimestamp(),
+        displayName: credential.user.displayName || credential.user.email || 'You',
+      });
+    } else {
+      transaction.set(
+        memberRef,
+        memberPayload(credential.user, room.createdBy === credential.user.uid ? 'creator' : 'partner'),
+      );
+    }
+  });
+}
+
+async function joinRoomLegacy(credential, roomCode) {
+  const roomRef = doc(db, 'couples', roomCode);
+  const roomSnapshot = await getDoc(roomRef);
+
+  if (!roomSnapshot.exists()) {
+    throw new Error('No private room was found for that couple code.');
   }
 
-  if (!response.ok) {
-    throw new Error(payload.error || 'Unable to open the private room.');
+  const room = roomSnapshot.data();
+  const memberIds = normalizeMemberIds(room);
+  const alreadyMember = memberIds.includes(credential.user.uid);
+
+  if (!alreadyMember && Number(room?.memberCount) >= 2) {
+    throw new Error('This private room already has two members.');
   }
 
-  return payload;
+  await setDoc(
+    doc(db, 'couples', roomCode, 'members', credential.user.uid),
+    memberPayload(credential.user, room.createdBy === credential.user.uid ? 'creator' : 'partner'),
+    { merge: true },
+  );
 }
 
 export function AuthProvider({ children }) {
@@ -137,7 +253,12 @@ export function AuthProvider({ children }) {
       const roomCode = requestedCode || normalizeCoupleCode(generateCoupleCode());
 
       try {
-        await ensureRoomMembership(credential, roomCode, 'signup');
+        try {
+          await createRoomV5(credential, roomCode);
+        } catch (error) {
+          if (!isPermissionDenied(error)) throw error;
+          await createRoomLegacy(credential, roomCode);
+        }
       } catch (error) {
         if (created) await deleteUser(credential.user).catch(() => {});
         await signOut(auth).catch(() => {});
@@ -158,7 +279,12 @@ export function AuthProvider({ children }) {
     const { credential, created } = await signInOrCreateUser(email, password);
 
     try {
-      await ensureRoomMembership(credential, roomCode, 'login');
+      try {
+        await joinRoomV5(credential, roomCode);
+      } catch (error) {
+        if (!isPermissionDenied(error)) throw error;
+        await joinRoomLegacy(credential, roomCode);
+      }
     } catch (error) {
       if (created) await deleteUser(credential.user).catch(() => {});
       await signOut(auth).catch(() => {});
