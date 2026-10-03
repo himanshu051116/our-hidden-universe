@@ -1,17 +1,16 @@
 import {
   collection,
   doc,
-  limit,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
   Timestamp,
+  where,
 } from 'firebase/firestore';
 import { db, firebaseEnabled } from './firebase.js';
 
-const historyPath = (coupleId) => collection(db, 'couples', coupleId, 'callHistory');
+const compatibilityPath = (coupleId) => collection(db, 'couples', coupleId, 'watchParty');
 
 function timestampValue(value) {
   if (!value) return null;
@@ -20,6 +19,14 @@ function timestampValue(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return Timestamp.fromMillis(value);
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? Timestamp.fromMillis(parsed) : null;
+}
+
+function toMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (typeof value?.seconds === 'number') return value.seconds * 1000;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export async function recordCallHistory({
@@ -36,8 +43,10 @@ export async function recordCallHistory({
   if (!firebaseEnabled || !coupleId || !callId || !callerId || !calleeId) return;
 
   await setDoc(
-    doc(db, 'couples', coupleId, 'callHistory', callId),
+    doc(db, 'couples', coupleId, 'watchParty', `call-history-${callId}`),
     {
+      _kind: 'callHistory',
+      callId,
       callerId,
       calleeId,
       type: type === 'audio' ? 'audio' : 'video',
@@ -57,10 +66,16 @@ export function subscribeRecentCallHistory(coupleId, onChange, onError) {
     return () => {};
   }
 
-  const q = query(historyPath(coupleId), orderBy('endedAt', 'desc'), limit(6));
+  const q = query(compatibilityPath(coupleId), where('_kind', '==', 'callHistory'));
   return onSnapshot(
     q,
-    (snapshot) => onChange(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))),
+    (snapshot) => {
+      const history = snapshot.docs
+        .map((entry) => ({ id: entry.data()?.callId || entry.id, ...entry.data() }))
+        .sort((a, b) => toMillis(b.endedAt) - toMillis(a.endedAt))
+        .slice(0, 6);
+      onChange(history);
+    },
     onError,
   );
 }
