@@ -12,6 +12,9 @@ export function qualityFromMetrics({
   jitterMs,
   packetLossPct,
 }) {
+  const hasMetrics = [rttMs, jitterMs, packetLossPct].some(Number.isFinite);
+  if (!hasMetrics) return 'unknown';
+
   const rtt = Number.isFinite(rttMs) ? rttMs : 0;
   const jitter = Number.isFinite(jitterMs) ? jitterMs : 0;
   const loss = Number.isFinite(packetLossPct) ? packetLossPct : 0;
