@@ -89,6 +89,8 @@ export default function CallScreen() {
           ? 'TURN ready'
           : 'STUN fallback';
 
+  const showConnectionWarning = Boolean(call.warning) && call.status !== CALL_STATUS.CONNECTED;
+
   return (
     <div className="fixed inset-0 z-[75] overflow-hidden bg-[#020308]">
       <div className="absolute inset-0">
@@ -142,7 +144,7 @@ export default function CallScreen() {
           </span>
         </div>
 
-        {call.warning ? (
+        {showConnectionWarning ? (
           <p className="mt-2 max-w-md text-[11px] text-amber-100/85">{call.warning}</p>
         ) : null}
       </div>

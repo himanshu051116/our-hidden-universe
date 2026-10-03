@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { qualityFromMetrics } from '../src/services/callDiagnosticsService.js';
 
+test('unknown network quality before metrics arrive', () => {
+  assert.equal(
+    qualityFromMetrics({ rttMs: null, jitterMs: null, packetLossPct: null }),
+    'unknown',
+  );
+});
+
 test('excellent network quality', () => {
   assert.equal(
     qualityFromMetrics({ rttMs: 70, jitterMs: 8, packetLossPct: 0.2 }),
