@@ -13,6 +13,7 @@ export const emptyWatchParty = {
     currentTime: 0,
     commandId: '',
     executeAt: 0,
+    delayMs: 0,
     sentAt: 0,
     updatedBy: '',
     updatedByName: '',
@@ -79,7 +80,7 @@ export async function saveWatchPartySetup(coupleId, user, setup) {
     updatedByName: user?.displayName || user?.email || 'You',
   };
 
-  if (!firebaseEnabled || !coupleId || !user?.uid) {
+  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), ...payload });
     return;
   }
@@ -91,18 +92,24 @@ export async function saveWatchPartySetup(coupleId, user, setup) {
   );
 }
 
+function couIdReady(coupleId, user) {
+  return Boolean(coupleId && user?.uid);
+}
+
 export async function sendWatchPartyCommand(coupleId, user, command) {
+  const sentAt = Date.now();
   const playback = {
     action: command.action || 'pause',
     currentTime: Math.max(0, Number(command.currentTime) || 0),
     commandId: crypto.randomUUID(),
-    executeAt: Number(command.executeAt) || Date.now(),
-    sentAt: Date.now(),
+    executeAt: Number(command.executeAt) || sentAt,
+    delayMs: Math.max(0, Number(command.delayMs) || 0),
+    sentAt,
     updatedBy: user?.uid || 'local',
     updatedByName: user?.displayName || user?.email || 'You',
   };
 
-  if (!firebaseEnabled || !coupleId || !user?.uid) {
+  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), playback });
     return playback;
   }
@@ -124,7 +131,7 @@ export async function sendWatchPartyHeartbeat(coupleId, user, state) {
     updatedByName: user?.displayName || user?.email || 'You',
   };
 
-  if (!firebaseEnabled || !coupleId || !user?.uid) {
+  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), sync });
     return sync;
   }
