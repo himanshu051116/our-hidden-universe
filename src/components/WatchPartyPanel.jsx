@@ -1,12 +1,13 @@
 import {
+  CheckCircle2,
   Clapperboard,
   ExternalLink,
   FileVideo,
-  Link2,
   Pause,
   Play,
   RotateCcw,
   Save,
+  Settings2,
   Timer,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -28,14 +29,31 @@ function formatTime(value) {
     : `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
+function parseTime(value) {
+  const input = String(value || '').trim();
+  if (!input) return 0;
+  if (!input.includes(':')) return Math.max(0, Number(input) || 0);
+  const parts = input.split(':').map((part) => Number(part) || 0);
+  if (parts.length === 2) return Math.max(0, parts[0] * 60 + parts[1]);
+  if (parts.length >= 3) return Math.max(0, parts.at(-3) * 3600 + parts.at(-2) * 60 + parts.at(-1));
+  return 0;
+}
+
+function sourceLabel(type) {
+  if (type === 'direct') return 'Video link';
+  if (type === 'local') return 'Video on this device';
+  return 'Streaming service';
+}
+
 export default function WatchPartyPanel() {
   const { user, coupleId } = useAuth();
   const [room, setRoom] = useState(emptyWatchParty);
   const [draft, setDraft] = useState(emptyWatchParty);
+  const [setupOpen, setSetupOpen] = useState(true);
   const [localVideoUrl, setLocalVideoUrl] = useState('');
   const [status, setStatus] = useState('');
   const [countdown, setCountdown] = useState(0);
-  const [manualTime, setManualTime] = useState('0');
+  const [manualTime, setManualTime] = useState('0:00');
   const videoRef = useRef(null);
   const lastCommandRef = useRef('');
   const suppressEventsUntilRef = useRef(0);
@@ -44,11 +62,12 @@ export default function WatchPartyPanel() {
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const hasEmbeddedPlayer = room.sourceType !== 'external' && Boolean(playableUrl);
+  const configured = Boolean(room.title || room.sourceUrl || room.sourceType === 'local');
 
   function showStatus(message) {
     setStatus(message);
     window.clearTimeout(statusTimerRef.current);
-    statusTimerRef.current = window.setTimeout(() => setStatus(''), 2200);
+    statusTimerRef.current = window.setTimeout(() => setStatus(''), 2400);
   }
 
   useEffect(() => {
@@ -62,9 +81,10 @@ export default function WatchPartyPanel() {
           sourceType: nextRoom.sourceType,
           sourceUrl: nextRoom.sourceUrl,
         }));
-        setManualTime(String(Math.floor(nextRoom.playback?.currentTime || 0)));
+        setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
+        if (!nextRoom.title && !nextRoom.sourceUrl) setSetupOpen(true);
       },
-      () => showStatus('Watch Party sync is blocked. Check Firebase rules.'),
+      () => showStatus('We could not sync the watch room. Try again.'),
     );
     return () => unsubscribe?.();
   }, [coupleId]);
@@ -84,7 +104,7 @@ export default function WatchPartyPanel() {
           video.currentTime = command.currentTime;
         }
         if (command.action === 'play') {
-          video.play().catch(() => showStatus('Tap play once to allow video playback.'));
+          video.play().catch(() => showStatus('Tap the player once if your browser blocks automatic playback.'));
         } else {
           video.pause();
         }
@@ -108,9 +128,10 @@ export default function WatchPartyPanel() {
     event.preventDefault();
     try {
       await saveWatchPartySetup(coupleId, user, draft);
-      showStatus('Watch Party setup saved for both of you.');
+      setSetupOpen(false);
+      showStatus('Watch room saved for both of you.');
     } catch {
-      showStatus('Unable to save the Watch Party setup.');
+      showStatus('Unable to save this watch room.');
     }
   }
 
@@ -119,10 +140,10 @@ export default function WatchPartyPanel() {
     if (!file) return;
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
-    showStatus('Local video ready on this device.');
+    showStatus('Video selected on this device. Your partner should choose the matching file on theirs.');
   }
 
-  async function broadcast(action, currentTime = videoRef.current?.currentTime ?? (Number(manualTime) || 0), delay = 0) {
+  async function broadcast(action, currentTime = videoRef.current?.currentTime ?? parseTime(manualTime), delay = 0) {
     try {
       const executeAt = Date.now() + delay;
       await sendWatchPartyCommand(coupleId, user, { action, currentTime, executeAt });
@@ -139,7 +160,7 @@ export default function WatchPartyPanel() {
         }, 1000);
       }
     } catch {
-      showStatus('Unable to send playback control.');
+      showStatus('Unable to send the playback update.');
     }
   }
 
@@ -155,70 +176,98 @@ export default function WatchPartyPanel() {
     suppressEventsUntilRef.current = Date.now() + 1000;
     video.currentTime = command.currentTime || 0;
     if (command.action === 'play') {
-      video.play().catch(() => showStatus('Tap play once to allow playback.'));
+      video.play().catch(() => showStatus('Tap the player once if your browser blocks automatic playback.'));
     } else {
       video.pause();
     }
+    showStatus(`Matched the shared room at ${formatTime(command.currentTime)}`);
   }
 
   return (
-    <article id="watch-party" className="scroll-mt-24 rounded-2xl border border-blush/30 bg-blush/10 p-4 lg:col-span-2">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="inline-flex items-center gap-2 text-sm text-roseGold">
-            <Clapperboard size={15} />
-            Watch Party
-          </p>
-          <h3 className="mt-2 font-display text-3xl text-white">Watch together, miles apart</h3>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-pink-100/70">
-            Sync direct videos or matching local files. Streaming services open in their own app while this room coordinates the countdown and timestamp.
-          </p>
+    <article id="watch-party" className="scroll-mt-24 space-y-4">
+      <section className="glass rounded-3xl p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold">
+              <Clapperboard size={14} />
+              Watch room
+            </p>
+            <h3 className="mt-2 truncate font-display text-3xl text-white sm:text-4xl">{room.title || 'Choose something to watch'}</h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-pink-100/55">
+              <span className="rounded-full bg-white/[0.05] px-3 py-1.5">{sourceLabel(room.sourceType)}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-emerald-200">
+                <CheckCircle2 size={12} />
+                {room.playback?.action === 'play' ? 'Playing' : 'Paused'} · {formatTime(room.playback?.currentTime)}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSetupOpen((value) => !value)}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-xs text-pink-100/65 transition hover:border-blush/45 hover:text-white"
+          >
+            <Settings2 size={14} />
+            {setupOpen ? 'Close setup' : configured ? 'Room setup' : 'Set up room'}
+          </button>
         </div>
-        <div className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs text-pink-100">
-          {room.playback?.action === 'play' ? 'Playing' : 'Paused'} · {formatTime(room.playback?.currentTime)}
-        </div>
-      </div>
 
-      <form onSubmit={saveSetup} className="mt-4 grid gap-3 md:grid-cols-2">
-        <input
-          value={draft.title}
-          onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-          placeholder="Series / movie title"
-          className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
-        />
-        <select
-          value={draft.sourceType}
-          onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}
-          className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70"
-        >
-          <option value="external">Streaming app / website</option>
-          <option value="direct">Direct video URL</option>
-          <option value="local">Local video file</option>
-        </select>
-        {draft.sourceType !== 'local' ? (
-          <input
-            value={draft.sourceUrl}
-            onChange={(event) => setDraft((current) => ({ ...current, sourceUrl: event.target.value }))}
-            placeholder={draft.sourceType === 'direct' ? 'Direct .mp4 / .webm video URL' : 'Netflix, Prime, YouTube, or other link'}
-            className="rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-blush/70 md:col-span-2"
-          />
-        ) : (
-          <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/15 bg-black/35 px-4 py-2 text-sm text-pink-100 md:col-span-2">
-            <FileVideo size={16} />
-            {localVideoUrl ? 'Local file selected' : 'Choose the episode on this device'}
-            <input type="file" accept="video/*" className="hidden" onChange={selectLocalVideo} />
-          </label>
-        )}
-        <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 py-2 text-sm font-semibold text-midnight md:col-span-2">
-          <Save size={15} />
-          Save room setup
-        </button>
-      </form>
+        {setupOpen ? (
+          <form onSubmit={saveSetup} className="mt-5 grid gap-3 border-t border-white/10 pt-5 md:grid-cols-2">
+            <label className="text-xs text-pink-100/60">
+              What are you watching?
+              <input
+                value={draft.title}
+                onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                placeholder="Movie or episode title"
+                className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
+              />
+            </label>
+            <label className="text-xs text-pink-100/60">
+              Source
+              <select
+                value={draft.sourceType}
+                onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}
+                className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
+              >
+                <option value="external">Streaming service</option>
+                <option value="direct">Video link</option>
+                <option value="local">Video on this device</option>
+              </select>
+            </label>
+
+            {draft.sourceType !== 'local' ? (
+              <label className="text-xs text-pink-100/60 md:col-span-2">
+                Link
+                <input
+                  value={draft.sourceUrl}
+                  onChange={(event) => setDraft((current) => ({ ...current, sourceUrl: event.target.value }))}
+                  placeholder={draft.sourceType === 'direct' ? 'Direct .mp4 or .webm link' : 'Link to the streaming page'}
+                  className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
+                />
+              </label>
+            ) : (
+              <label className="md:col-span-2 text-xs text-pink-100/60">
+                Local video
+                <span className="mt-1.5 inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-black/30 px-4 text-sm text-pink-100/65 transition hover:border-blush/45">
+                  <FileVideo size={16} />
+                  {localVideoUrl ? 'Change selected video' : 'Choose the matching video on this device'}
+                </span>
+                <input type="file" accept="video/*" className="hidden" onChange={selectLocalVideo} />
+              </label>
+            )}
+
+            <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 text-sm font-semibold text-midnight md:col-span-2">
+              <Save size={15} />
+              Save watch room
+            </button>
+          </form>
+        ) : null}
+      </section>
 
       {room.sourceType === 'local' && !localVideoUrl ? (
-        <label className="mt-4 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-blush/35 bg-black/25 px-4 text-sm text-blush">
-          <FileVideo size={16} />
-          Select your matching local video
+        <label className="glass inline-flex min-h-14 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-dashed px-4 text-sm text-blush transition hover:border-blush/50">
+          <FileVideo size={17} />
+          Choose the matching video on this device
           <input type="file" accept="video/*" className="hidden" onChange={selectLocalVideo} />
         </label>
       ) : null}
@@ -233,62 +282,74 @@ export default function WatchPartyPanel() {
           onPlay={() => onNativePlayback('play')}
           onPause={() => onNativePlayback('pause')}
           onSeeked={() => onNativePlayback(videoRef.current?.paused ? 'pause' : 'play')}
-          className="mt-4 max-h-[60vh] w-full rounded-2xl bg-black object-contain"
+          className="max-h-[65vh] w-full rounded-3xl bg-black object-contain shadow-[0_22px_70px_rgba(0,0,0,.35)]"
         />
       ) : room.sourceType === 'external' ? (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-          <p className="text-sm text-pink-100">
-            Open the same title on both devices. The controls below coordinate when to start and where to seek.
-          </p>
+        <section className="glass rounded-3xl p-4 sm:p-5">
+          <p className="text-sm leading-6 text-pink-100/68">Open the same title on both devices. OHS coordinates the shared timestamp and the countdown; the streaming service keeps playing in its own app or tab.</p>
           {room.sourceUrl ? (
-            <a href={room.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-blush/50 px-4 text-sm text-blush">
+            <a href={room.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-blush/45 px-4 text-sm text-blush transition hover:bg-blush/10">
               <ExternalLink size={15} />
-              Open streaming site
+              Open streaming service
             </a>
           ) : null}
-        </div>
+        </section>
       ) : (
-        <p className="mt-4 rounded-2xl border border-dashed border-white/15 bg-black/25 px-4 py-6 text-center text-sm text-pink-100/65">
-          Add a direct video link to load the shared player.
-        </p>
+        <section className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-5 py-10 text-center">
+          <p className="font-display text-2xl text-white">Add a video link to start.</p>
+          <button type="button" onClick={() => setSetupOpen(true)} className="mt-3 text-sm text-blush">Open room setup</button>
+        </section>
       )}
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <button type="button" onClick={() => broadcast('play', undefined, 3000)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-blush px-4 text-sm font-semibold text-midnight">
-          <Timer size={15} />
-          {countdown ? `Starting in ${countdown}` : 'Start in 3 seconds'}
-        </button>
-        <button type="button" onClick={() => broadcast('play')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 text-sm text-pink-100">
-          <Play size={15} />
-          Play together
-        </button>
-        <button type="button" onClick={() => broadcast('pause')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 text-sm text-pink-100">
-          <Pause size={15} />
-          Pause together
-        </button>
-        <button type="button" onClick={syncToRoom} disabled={!hasEmbeddedPlayer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 text-sm text-pink-100 disabled:opacity-40">
-          <RotateCcw size={15} />
-          Match room
-        </button>
-      </div>
+      <section className="glass rounded-3xl p-4 sm:p-5">
+        {countdown ? (
+          <div className="mb-4 rounded-3xl border border-blush/25 bg-blush/[0.06] px-4 py-5 text-center">
+            <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Starting together</p>
+            <p className="mt-1 font-display text-6xl text-white">{countdown}</p>
+          </div>
+        ) : null}
 
-      <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:flex-row sm:items-center">
-        <Link2 size={15} className="shrink-0 text-roseGold" />
-        <label className="text-xs text-pink-100/70" htmlFor="watch-party-time">Shared timestamp in seconds</label>
-        <input
-          id="watch-party-time"
-          type="number"
-          min="0"
-          value={manualTime}
-          onChange={(event) => setManualTime(event.target.value)}
-          className="min-h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none"
-        />
-        <button type="button" onClick={() => broadcast('pause', Number(manualTime) || 0)} className="min-h-10 rounded-full border border-blush/45 px-4 text-xs text-blush">
-          Sync timestamp
-        </button>
-      </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <button type="button" onClick={() => broadcast('play', undefined, 3000)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105">
+            <Timer size={15} />
+            Start together
+          </button>
+          <button type="button" onClick={() => broadcast('play')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40">
+            <Play size={15} />
+            Play
+          </button>
+          <button type="button" onClick={() => broadcast('pause')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40">
+            <Pause size={15} />
+            Pause
+          </button>
+          <button type="button" onClick={syncToRoom} disabled={!hasEmbeddedPlayer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35">
+            <RotateCcw size={15} />
+            Match room
+          </button>
+        </div>
 
-      {status ? <p className="mt-3 text-center text-xs text-blush">{status}</p> : null}
+        <details className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+          <summary className="cursor-pointer text-xs text-pink-100/55">Having trouble staying in sync?</summary>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="min-w-0 flex-1 text-xs text-pink-100/55">
+              Shared position
+              <input
+                type="text"
+                inputMode="numeric"
+                value={manualTime}
+                onChange={(event) => setManualTime(event.target.value)}
+                placeholder="41:18"
+                className="mt-1.5 min-h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/50"
+              />
+            </label>
+            <button type="button" onClick={() => broadcast('pause', parseTime(manualTime))} className="min-h-10 rounded-full border border-blush/40 px-4 text-xs text-blush transition hover:bg-blush/10">
+              Sync position
+            </button>
+          </div>
+        </details>
+      </section>
+
+      {status ? <p className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p> : null}
     </article>
   );
 }
