@@ -15,14 +15,17 @@ const Universe = lazy(() => import('./pages/Universe.jsx'));
 const UniverseChat = lazy(() => import('./pages/UniverseChat.jsx'));
 const UniverseExtras = lazy(() => import('./pages/UniverseExtras.jsx'));
 const UniverseHome = lazy(() => import('./pages/UniverseHome.jsx'));
+const UniverseMemories = lazy(() => import('./pages/UniverseMemories.jsx'));
 const UniverseOpenWhen = lazy(() => import('./pages/UniverseOpenWhen.jsx'));
 const UniverseSky = lazy(() => import('./pages/UniverseSky.jsx'));
-const UniverseTimeline = lazy(() => import('./pages/UniverseTimeline.jsx'));
+const UniverseTogether = lazy(() => import('./pages/UniverseTogether.jsx'));
+const UniverseUs = lazy(() => import('./pages/UniverseUs.jsx'));
+const UniverseWatch = lazy(() => import('./pages/UniverseWatch.jsx'));
 
 function RouteFallback() {
   return (
     <div className="relative z-10 grid min-h-screen place-items-center px-6 text-center text-sm text-pink-100/80">
-      Loading...
+      Opening your universe…
     </div>
   );
 }
@@ -58,10 +61,14 @@ export default function App() {
               <Route index element={<Navigate to="home" replace />} />
               <Route path="home" element={<UniverseHome />} />
               <Route path="chat" element={<UniverseChat />} />
+              <Route path="together" element={<UniverseTogether />} />
+              <Route path="together/watch" element={<UniverseWatch />} />
               <Route path="sky" element={<UniverseSky />} />
-              <Route path="timeline" element={<UniverseTimeline />} />
+              <Route path="memories" element={<UniverseMemories />} />
+              <Route path="timeline" element={<Navigate to="/universe/memories" replace />} />
               <Route path="open-when" element={<UniverseOpenWhen />} />
               <Route path="extras" element={<UniverseExtras />} />
+              <Route path="us" element={<UniverseUs />} />
             </Route>
             <Route
               path="/birthday-surprise"
