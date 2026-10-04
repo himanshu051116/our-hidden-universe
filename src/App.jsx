@@ -17,6 +17,7 @@ const UniverseExtras = lazy(() => import('./pages/UniverseExtras.jsx'));
 const UniverseHome = lazy(() => import('./pages/UniverseHome.jsx'));
 const UniverseMemories = lazy(() => import('./pages/UniverseMemories.jsx'));
 const UniverseOpenWhen = lazy(() => import('./pages/UniverseOpenWhen.jsx'));
+const UniverseRead = lazy(() => import('./pages/UniverseRead.jsx'));
 const UniverseSky = lazy(() => import('./pages/UniverseSky.jsx'));
 const UniverseTogether = lazy(() => import('./pages/UniverseTogether.jsx'));
 const UniverseUs = lazy(() => import('./pages/UniverseUs.jsx'));
@@ -63,6 +64,7 @@ export default function App() {
               <Route path="chat" element={<UniverseChat />} />
               <Route path="together" element={<UniverseTogether />} />
               <Route path="together/watch" element={<UniverseWatch />} />
+              <Route path="together/read" element={<UniverseRead />} />
               <Route path="sky" element={<UniverseSky />} />
               <Route path="memories" element={<UniverseMemories />} />
               <Route path="timeline" element={<Navigate to="/universe/memories" replace />} />
