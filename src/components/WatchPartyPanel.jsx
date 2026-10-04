@@ -50,6 +50,17 @@ function sourceLabel(type) {
   return 'Streaming service';
 }
 
+function normalizeHttpUrl(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+  try {
+    const url = new URL(input.startsWith('http://') || input.startsWith('https://') ? input : `https://${input}`);
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
 export default function WatchPartyPanel() {
   const { user, coupleId } = useAuth();
   const [room, setRoom] = useState(emptyWatchParty);
@@ -69,6 +80,8 @@ export default function WatchPartyPanel() {
   const countdownTimerRef = useRef(0);
   const heartbeatTimerRef = useRef(0);
   const playbackRateTimerRef = useRef(0);
+  const previousSessionRef = useRef('');
+  const localFileSessionRef = useRef('');
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const youtubeVideoId = room.sourceType === 'youtube' ? extractYouTubeVideoId(room.sourceUrl) : '';
@@ -76,11 +89,17 @@ export default function WatchPartyPanel() {
   const hasYouTubePlayer = room.sourceType === 'youtube' && Boolean(youtubeVideoId);
   const hasSynchronizedPlayer = hasNativePlayer || hasYouTubePlayer;
   const configured = Boolean(room.title || room.sourceUrl || room.sourceType === 'local');
+  const leaderIsMe = Boolean(user?.uid && room.playback?.updatedBy === user.uid);
+  const leaderLabel = room.playback?.updatedBy
+    ? leaderIsMe
+      ? 'You lead sync'
+      : `${room.playback.updatedByName || 'Partner'} leads sync`
+    : 'Waiting for playback';
 
   function showStatus(message) {
     setStatus(message);
     window.clearTimeout(statusTimerRef.current);
-    statusTimerRef.current = window.setTimeout(() => setStatus(''), 2800);
+    statusTimerRef.current = window.setTimeout(() => setStatus(''), 3000);
   }
 
   function getPlayerCurrentTime() {
@@ -102,12 +121,12 @@ export default function WatchPartyPanel() {
 
   function applyEmbeddedPlayback(action, currentTime) {
     const target = Math.max(0, Number(currentTime) || 0);
-    suppressEventsUntilRef.current = Date.now() + 1600;
+    suppressEventsUntilRef.current = Date.now() + 1800;
 
     if (room.sourceType === 'youtube') {
       const player = youtubeRef.current;
       if (!player?.isReady?.()) return false;
-      if (Math.abs((player.getCurrentTime?.() || 0) - target) > 0.7) player.seekTo?.(target);
+      if (Math.abs((player.getCurrentTime?.() || 0) - target) > 0.65) player.seekTo?.(target);
       if (action === 'play') player.play?.();
       else player.pause?.();
       return true;
@@ -116,7 +135,7 @@ export default function WatchPartyPanel() {
     const video = videoRef.current;
     if (!video) return false;
     resetNativePlaybackRate();
-    if (Math.abs(video.currentTime - target) > 0.7) video.currentTime = target;
+    if (Math.abs(video.currentTime - target) > 0.65) video.currentTime = target;
     if (action === 'play') {
       video.play().catch(() => showStatus('Tap the player once if your browser blocks automatic playback.'));
     } else {
@@ -142,16 +161,48 @@ export default function WatchPartyPanel() {
     }, 1000);
   }
 
+  async function publishHeartbeat({ buffering = false, currentTime = getPlayerCurrentTime() } = {}) {
+    if (!leaderIsMe || !room.sessionId || room.playback?.action !== 'play') return;
+    try {
+      await sendWatchPartyHeartbeat(coupleId, user, {
+        currentTime,
+        playing: !buffering && playerIsPlaying(),
+        buffering,
+        sessionId: room.sessionId,
+      });
+      setSyncState(buffering ? 'Waiting on this connection' : 'Live sync active');
+    } catch {
+      setSyncState('Sync retrying');
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = subscribeWatchParty(
       coupleId,
       (nextRoom) => {
+        const sessionChanged = Boolean(
+          nextRoom.sessionId && previousSessionRef.current !== nextRoom.sessionId,
+        );
+
+        if (
+          sessionChanged &&
+          nextRoom.sourceType === 'local' &&
+          localFileSessionRef.current !== nextRoom.sessionId
+        ) {
+          setLocalVideoUrl((current) => {
+            if (current) URL.revokeObjectURL(current);
+            return '';
+          });
+        }
+
+        previousSessionRef.current = nextRoom.sessionId || previousSessionRef.current;
         setRoom(nextRoom);
         setDraft((current) => ({
           ...current,
           title: nextRoom.title,
           sourceType: nextRoom.sourceType,
           sourceUrl: nextRoom.sourceUrl,
+          sessionId: nextRoom.sessionId,
         }));
         setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
         if (!nextRoom.title && !nextRoom.sourceUrl) setSetupOpen(true);
@@ -164,6 +215,7 @@ export default function WatchPartyPanel() {
   useEffect(() => {
     const command = room.playback;
     if (!command?.commandId || command.commandId === lastCommandRef.current) return undefined;
+    if (room.sessionId && command.sessionId !== room.sessionId) return undefined;
     lastCommandRef.current = command.commandId;
 
     const delay = command.sentAt
@@ -180,29 +232,22 @@ export default function WatchPartyPanel() {
     }, delay);
 
     return () => window.clearTimeout(scheduledActionRef.current);
-  }, [room.playback, user?.uid]);
+  }, [room.playback, room.sessionId, room.sourceType, user?.uid]);
 
   useEffect(() => {
     window.clearInterval(heartbeatTimerRef.current);
-    const leaderIsMe = room.playback?.updatedBy === user?.uid;
-    if (!hasSynchronizedPlayer || !leaderIsMe || room.playback?.action !== 'play') return undefined;
-
-    async function heartbeat() {
-      if (!playerIsPlaying()) return;
-      try {
-        await sendWatchPartyHeartbeat(coupleId, user, {
-          currentTime: getPlayerCurrentTime(),
-          playing: true,
-        });
-        setSyncState('Sharing live position');
-      } catch {
-        setSyncState('Sync retrying');
-      }
+    if (!hasSynchronizedPlayer || !leaderIsMe || room.playback?.action !== 'play' || !room.sessionId) {
+      return undefined;
     }
 
-    heartbeatTimerRef.current = window.setInterval(heartbeat, 4000);
+    const heartbeat = () => {
+      if (playerIsPlaying()) publishHeartbeat();
+    };
+
+    heartbeat();
+    heartbeatTimerRef.current = window.setInterval(heartbeat, 3000);
     return () => window.clearInterval(heartbeatTimerRef.current);
-  }, [coupleId, hasSynchronizedPlayer, room.playback?.action, room.playback?.updatedBy, room.sourceType, user]);
+  }, [coupleId, hasSynchronizedPlayer, leaderIsMe, room.playback?.action, room.sessionId, room.sourceType, user?.uid]);
 
   useEffect(() => {
     const sync = room.sync;
@@ -210,13 +255,21 @@ export default function WatchPartyPanel() {
     if (
       !hasSynchronizedPlayer ||
       !sync?.sentAt ||
-      !sync.playing ||
-      room.playback?.action !== 'play' ||
+      !leader ||
       sync.updatedBy === user?.uid ||
-      sync.updatedBy !== leader
+      sync.updatedBy !== leader ||
+      (room.sessionId && sync.sessionId !== room.sessionId)
     ) {
       return undefined;
     }
+
+    if (sync.buffering && room.playback?.action === 'play') {
+      applyEmbeddedPlayback('pause', sync.currentTime);
+      setSyncState('Waiting for partner');
+      return undefined;
+    }
+
+    if (!sync.playing || room.playback?.action !== 'play') return undefined;
 
     const localTime = getPlayerCurrentTime();
     const drift = Number(sync.currentTime || 0) - localTime;
@@ -228,25 +281,26 @@ export default function WatchPartyPanel() {
       return undefined;
     }
 
-    if (magnitude >= 1.5) {
+    const hardDriftThreshold = room.sourceType === 'youtube' ? 1.2 : 1.8;
+    if (magnitude >= hardDriftThreshold) {
       applyEmbeddedPlayback('play', sync.currentTime);
       setSyncState(`Corrected ${magnitude.toFixed(1)}s drift`);
       return undefined;
     }
 
-    if (hasNativePlayer && magnitude >= 0.65 && videoRef.current) {
+    if (hasNativePlayer && magnitude >= 0.7 && videoRef.current) {
       window.clearTimeout(playbackRateTimerRef.current);
       videoRef.current.playbackRate = drift > 0 ? 1.05 : 0.95;
       playbackRateTimerRef.current = window.setTimeout(() => {
         if (videoRef.current) videoRef.current.playbackRate = 1;
-      }, 2400);
+      }, 2200);
       setSyncState('Fine-tuning sync');
       return () => window.clearTimeout(playbackRateTimerRef.current);
     }
 
     setSyncState('In sync');
     return undefined;
-  }, [hasNativePlayer, hasSynchronizedPlayer, room.playback?.action, room.playback?.updatedBy, room.sync, room.sourceType, user?.uid]);
+  }, [hasNativePlayer, hasSynchronizedPlayer, room.playback?.action, room.playback?.updatedBy, room.sessionId, room.sourceType, room.sync, user?.uid]);
 
   useEffect(
     () => () => {
@@ -262,7 +316,7 @@ export default function WatchPartyPanel() {
 
   async function saveSetup(event) {
     event.preventDefault();
-    let nextDraft = draft;
+    let nextDraft = { ...draft };
 
     if (draft.sourceType === 'youtube') {
       const videoId = extractYouTubeVideoId(draft.sourceUrl);
@@ -270,13 +324,38 @@ export default function WatchPartyPanel() {
         showStatus('Paste a valid YouTube video link or video ID.');
         return;
       }
-      nextDraft = { ...draft, sourceUrl: `https://www.youtube.com/watch?v=${videoId}` };
+      nextDraft.sourceUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    } else if (['direct', 'external'].includes(draft.sourceType)) {
+      const normalizedUrl = normalizeHttpUrl(draft.sourceUrl);
+      if (!normalizedUrl) {
+        showStatus('Add a valid http or https link for this source.');
+        return;
+      }
+      nextDraft.sourceUrl = normalizedUrl;
+    } else if (draft.sourceType === 'local' && !localVideoUrl) {
+      showStatus('Choose the video file on this device before saving the room.');
+      return;
     }
 
+    const sourceChanged =
+      !room.sessionId ||
+      room.sourceType !== nextDraft.sourceType ||
+      room.sourceUrl !== nextDraft.sourceUrl ||
+      nextDraft.sourceType === 'local';
+    const sessionId = sourceChanged ? crypto.randomUUID() : room.sessionId;
+    nextDraft = { ...nextDraft, sessionId };
+
+    if (nextDraft.sourceType === 'local') localFileSessionRef.current = sessionId;
+
     try {
-      await saveWatchPartySetup(coupleId, user, nextDraft);
+      await saveWatchPartySetup(coupleId, user, nextDraft, { resetPlayback: sourceChanged });
+      if (sourceChanged) {
+        lastCommandRef.current = '';
+        setManualTime('0:00');
+        setSyncState('New session ready');
+      }
       setSetupOpen(false);
-      showStatus('Watch room saved for both of you.');
+      showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
       showStatus('Unable to save this watch room.');
     }
@@ -287,13 +366,18 @@ export default function WatchPartyPanel() {
     if (!file) return;
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
-    showStatus('Video selected on this device. Your partner should choose the matching file on theirs.');
+    showStatus('Video selected. Your partner should choose the matching file on their device.');
   }
 
   async function broadcast(action, currentTime = getPlayerCurrentTime(), delay = 0) {
+    if (!configured) {
+      showStatus('Set up the watch room first.');
+      return;
+    }
+
     try {
       if (delay && hasSynchronizedPlayer) {
-        suppressEventsUntilRef.current = Date.now() + 1200;
+        suppressEventsUntilRef.current = Date.now() + 1400;
         if (room.sourceType === 'youtube') youtubeRef.current?.pause?.();
         else videoRef.current?.pause?.();
       }
@@ -303,6 +387,7 @@ export default function WatchPartyPanel() {
         currentTime,
         executeAt: Date.now() + delay,
         delayMs: delay,
+        sessionId: room.sessionId,
       });
       setSyncState(delay ? 'Countdown shared' : 'Sharing playback');
     } catch {
@@ -316,9 +401,25 @@ export default function WatchPartyPanel() {
     broadcast(action, currentTime);
   }
 
+  function onYouTubeSeek(currentTime, playing) {
+    if (Date.now() < suppressEventsUntilRef.current) return;
+    setSyncState('Sharing seek');
+    broadcast(playing ? 'play' : 'pause', currentTime);
+  }
+
+  function onPlayerBuffering(buffering, currentTime = getPlayerCurrentTime()) {
+    if (!hasSynchronizedPlayer) return;
+    if (!leaderIsMe) {
+      setSyncState(buffering ? 'Buffering locally' : 'Auto-sync active');
+      return;
+    }
+    publishHeartbeat({ buffering, currentTime });
+  }
+
   function syncToRoom({ quiet = false } = {}) {
     const command = room.playback;
     if (!hasSynchronizedPlayer || !command) return;
+    if (room.sessionId && command.sessionId !== room.sessionId) return;
     const applied = applyEmbeddedPlayback(command.action, command.currentTime || 0);
     if (applied) {
       setSyncState('Matched shared room');
@@ -335,7 +436,9 @@ export default function WatchPartyPanel() {
               <Clapperboard size={14} />
               Watch room
             </p>
-            <h3 className="mt-2 truncate font-display text-3xl text-white sm:text-4xl">{room.title || 'Choose something to watch'}</h3>
+            <h3 className="mt-2 truncate font-display text-3xl text-white sm:text-4xl">
+              {room.title || 'Choose something to watch'}
+            </h3>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-pink-100/55">
               <span className="rounded-full bg-white/[0.05] px-3 py-1.5">{sourceLabel(room.sourceType)}</span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-emerald-200">
@@ -347,6 +450,7 @@ export default function WatchPartyPanel() {
                 {hasSynchronizedPlayer ? syncState : 'Manual sync'}
               </span>
             </div>
+            {hasSynchronizedPlayer ? <p className="mt-2 text-xs text-pink-100/45">{leaderLabel}</p> : null}
           </div>
           <button
             type="button"
@@ -400,7 +504,7 @@ export default function WatchPartyPanel() {
                 />
                 {draft.sourceType === 'youtube' ? (
                   <span className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-pink-100/45">
-                    <Youtube size={13} /> Supports standard videos, Shorts, Live links, youtu.be links, and video IDs.
+                    <Youtube size={13} /> Supports videos, Shorts, Live links, youtu.be links, and video IDs.
                   </span>
                 ) : null}
               </label>
@@ -415,7 +519,10 @@ export default function WatchPartyPanel() {
               </label>
             )}
 
-            <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 text-sm font-semibold text-midnight md:col-span-2">
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 text-sm font-semibold text-midnight md:col-span-2"
+            >
               <Save size={15} />
               Save watch room
             </button>
@@ -433,11 +540,13 @@ export default function WatchPartyPanel() {
 
       {hasYouTubePlayer ? (
         <YouTubeSyncPlayer
-          key={youtubeVideoId}
+          key={`${room.sessionId}:${youtubeVideoId}`}
           ref={youtubeRef}
           videoId={youtubeVideoId}
           onReady={() => window.setTimeout(() => syncToRoom({ quiet: true }), 150)}
           onPlaybackAction={onPlayerPlayback}
+          onSeek={onYouTubeSeek}
+          onBufferingChange={onPlayerBuffering}
           onError={showStatus}
         />
       ) : hasNativePlayer ? (
@@ -450,6 +559,8 @@ export default function WatchPartyPanel() {
           onPlay={() => onPlayerPlayback('play')}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
+          onWaiting={() => onPlayerBuffering(true)}
+          onPlaying={() => onPlayerBuffering(false)}
           className="max-h-[65vh] w-full rounded-3xl bg-black object-contain shadow-[0_22px_70px_rgba(0,0,0,.35)]"
         />
       ) : room.sourceType === 'youtube' ? (
@@ -460,9 +571,16 @@ export default function WatchPartyPanel() {
         </section>
       ) : room.sourceType === 'external' ? (
         <section className="glass rounded-3xl p-4 sm:p-5">
-          <p className="text-sm leading-6 text-pink-100/68">Open the same title on both devices. OHS coordinates the shared timestamp and countdown; the streaming service keeps playing in its own app or tab.</p>
+          <p className="text-sm leading-6 text-pink-100/68">
+            Open the same title on both devices. OHS shares the countdown and timestamp, while the streaming service plays in its own app or tab.
+          </p>
           {room.sourceUrl ? (
-            <a href={room.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-blush/45 px-4 text-sm text-blush transition hover:bg-blush/10">
+            <a
+              href={room.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-blush/45 px-4 text-sm text-blush transition hover:bg-blush/10"
+            >
               <ExternalLink size={15} />
               Open streaming service
             </a>
@@ -484,19 +602,39 @@ export default function WatchPartyPanel() {
         ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <button type="button" onClick={() => broadcast('play', undefined, 3000)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105">
+          <button
+            type="button"
+            onClick={() => broadcast('play', undefined, 3000)}
+            disabled={!configured}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <Timer size={15} />
             Start together
           </button>
-          <button type="button" onClick={() => broadcast('play')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40">
+          <button
+            type="button"
+            onClick={() => broadcast('play')}
+            disabled={!configured}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35"
+          >
             <Play size={15} />
             Play
           </button>
-          <button type="button" onClick={() => broadcast('pause')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40">
+          <button
+            type="button"
+            onClick={() => broadcast('pause')}
+            disabled={!configured}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35"
+          >
             <Pause size={15} />
             Pause
           </button>
-          <button type="button" onClick={() => syncToRoom()} disabled={!hasSynchronizedPlayer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35">
+          <button
+            type="button"
+            onClick={() => syncToRoom()}
+            disabled={!hasSynchronizedPlayer}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35"
+          >
             <RotateCcw size={15} />
             Match room
           </button>
@@ -504,7 +642,7 @@ export default function WatchPartyPanel() {
 
         <div className="mt-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.04] px-4 py-3 text-xs leading-5 text-pink-100/60">
           {hasSynchronizedPlayer
-            ? 'Auto-sync checks the controlling player every few seconds and corrects meaningful drift automatically. Play, pause, and seeking are shared with your partner.'
+            ? 'Live sync follows the most recent controller, shares seeks immediately, holds playback when the leader buffers, and automatically corrects meaningful drift.'
             : 'This source opens outside OHS, so use Start together and the shared position if either device drifts.'}
         </div>
 
@@ -522,14 +660,20 @@ export default function WatchPartyPanel() {
                 className="mt-1.5 min-h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/50"
               />
             </label>
-            <button type="button" onClick={() => broadcast('pause', parseTime(manualTime))} className="min-h-10 rounded-full border border-blush/40 px-4 text-xs text-blush transition hover:bg-blush/10">
+            <button
+              type="button"
+              onClick={() => broadcast('pause', parseTime(manualTime))}
+              className="min-h-10 rounded-full border border-blush/40 px-4 text-xs text-blush transition hover:bg-blush/10"
+            >
               Sync position
             </button>
           </div>
         </details>
       </section>
 
-      {status ? <p className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p> : null}
+      {status ? (
+        <p className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p>
+      ) : null}
     </article>
   );
 }
