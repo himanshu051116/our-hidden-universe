@@ -29,8 +29,8 @@ export default function BottomNav() {
   const location = useLocation();
 
   return (
-    <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl">
-      <div className="mx-auto flex max-w-lg items-stretch justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.04] px-1.5 py-1.5 sm:gap-2 sm:px-2 sm:py-2">
+    <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-midnight/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_45px_rgba(0,0,0,.35)] backdrop-blur-xl lg:inset-x-0 lg:bottom-auto lg:top-4 lg:border-0 lg:bg-transparent lg:px-4 lg:pb-0 lg:pt-0 lg:shadow-none lg:backdrop-blur-none">
+      <div className="mx-auto flex max-w-lg items-stretch justify-center gap-1 rounded-2xl border border-white/10 bg-midnight/90 px-1.5 py-1.5 shadow-[0_18px_60px_rgba(0,0,0,.28)] backdrop-blur-xl sm:gap-2 sm:px-2 sm:py-2 lg:max-w-2xl lg:rounded-full lg:px-2 lg:py-2">
         {items.map(({ to, label, icon: Icon, family }) => {
           const active = belongsToFamily(location.pathname, family);
           return (
@@ -38,7 +38,7 @@ export default function BottomNav() {
               key={to}
               to={to}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[11px] leading-none transition sm:px-2 sm:text-xs ${
+              className={`flex min-h-[58px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-[11px] leading-none transition sm:px-2 sm:text-xs lg:min-h-11 lg:flex-row lg:gap-2 lg:rounded-full lg:px-4 lg:text-sm ${
                 active
                   ? 'bg-blush/15 text-white shadow-[inset_0_0_0_1px_rgba(244,174,190,.38)]'
                   : 'text-pink-100/65 hover:bg-white/[0.06] hover:text-pink-100'
