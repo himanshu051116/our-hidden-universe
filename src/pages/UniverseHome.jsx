@@ -212,7 +212,7 @@ export default function UniverseHome() {
           <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Open watch room <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
         </Link>
 
-        <Link to="/universe/extras#read-together" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
+        <Link to="/universe/together/read" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
           <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold"><BookOpen size={14} /> Read Together</p>
           <h2 className="mt-2 font-display text-2xl text-white">{readingLabel}</h2>
           <p className="mt-1 text-sm text-pink-100/60">
