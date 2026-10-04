@@ -13,6 +13,14 @@ export const emptyWatchParty = {
     currentTime: 0,
     commandId: '',
     executeAt: 0,
+    sentAt: 0,
+    updatedBy: '',
+    updatedByName: '',
+  },
+  sync: {
+    currentTime: 0,
+    playing: false,
+    sentAt: 0,
     updatedBy: '',
     updatedByName: '',
   },
@@ -25,6 +33,10 @@ function normalizeWatchParty(value = {}) {
     playback: {
       ...emptyWatchParty.playback,
       ...(value.playback || {}),
+    },
+    sync: {
+      ...emptyWatchParty.sync,
+      ...(value.sync || {}),
     },
   };
 }
@@ -85,6 +97,7 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     currentTime: Math.max(0, Number(command.currentTime) || 0),
     commandId: crypto.randomUUID(),
     executeAt: Number(command.executeAt) || Date.now(),
+    sentAt: Date.now(),
     updatedBy: user?.uid || 'local',
     updatedByName: user?.displayName || user?.email || 'You',
   };
@@ -100,4 +113,26 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     { merge: true },
   );
   return playback;
+}
+
+export async function sendWatchPartyHeartbeat(coupleId, user, state) {
+  const sync = {
+    currentTime: Math.max(0, Number(state.currentTime) || 0),
+    playing: Boolean(state.playing),
+    sentAt: Date.now(),
+    updatedBy: user?.uid || 'local',
+    updatedByName: user?.displayName || user?.email || 'You',
+  };
+
+  if (!firebaseEnabled || !coupleId || !user?.uid) {
+    saveLocalWatchParty({ ...loadLocalWatchParty(), sync });
+    return sync;
+  }
+
+  await setDoc(
+    doc(db, 'couples', coupleId, 'watchParty', 'current'),
+    { sync, syncUpdatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  return sync;
 }
