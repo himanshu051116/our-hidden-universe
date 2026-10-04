@@ -1,5 +1,7 @@
-import { ArrowRight, Cake, DatabaseZap, Heart, Images, KeyRound, ListTodo, LogOut, Sparkles } from 'lucide-react';
+import { ArrowRight, Bell, BellRing, Cake, DatabaseZap, Heart, Images, KeyRound, ListTodo, LogOut, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
+import { useCall } from '../calls/CallContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const experienceLinks = [
@@ -31,14 +33,44 @@ const experienceLinks = [
 
 export default function UniverseUs() {
   const { logout, coupleCodeDisplay } = useAuth();
+  const { notificationStatus, enableCallNotifications } = useCall();
   const { onResetData, resetBusy } = useOutletContext();
+  const [copyStatus, setCopyStatus] = useState('');
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
 
   async function copyCode() {
     if (!coupleCodeDisplay) return;
     try {
       await navigator.clipboard.writeText(coupleCodeDisplay);
+      setCopyStatus('Copied');
     } catch {
-      // Clipboard support is optional; the visible code remains available below.
+      setCopyStatus('Copy unavailable');
+    }
+    window.setTimeout(() => setCopyStatus(''), 1600);
+  }
+
+  async function enableAlerts() {
+    if (notificationBusy || notificationStatus.enabled) return;
+    setNotificationBusy(true);
+    setNotificationMessage('');
+    try {
+      const result = await enableCallNotifications();
+      if (result.enabled) {
+        setNotificationMessage('Call alerts are enabled on this device.');
+      } else {
+        const message = {
+          blocked: 'Notifications are blocked in this device or browser settings.',
+          prompt: 'Notification permission was not enabled.',
+          misconfigured: 'Call alerts are not available on this deployment yet.',
+          unsupported: 'This browser does not support call alerts.',
+        }[result.status] || 'Unable to enable call alerts.';
+        setNotificationMessage(message);
+      }
+    } catch {
+      setNotificationMessage('Unable to enable call alerts right now.');
+    } finally {
+      setNotificationBusy(false);
     }
   }
 
@@ -81,7 +113,22 @@ export default function UniverseUs() {
               <span className="block font-medium text-white">Couple code</span>
               <span className="block truncate text-xs text-pink-100/50">{coupleCodeDisplay || 'No code available'}</span>
             </span>
-            <span className="text-xs text-blush">Copy</span>
+            <span className="text-xs text-blush">{copyStatus || 'Copy'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={enableAlerts}
+            disabled={notificationBusy || notificationStatus.enabled}
+            className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm text-pink-100 transition hover:bg-white/[0.05] disabled:opacity-65"
+          >
+            {notificationStatus.enabled ? <BellRing size={17} className="text-emerald-200" /> : <Bell size={17} className="text-roseGold" />}
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium text-white">Call alerts</span>
+              <span className="block text-xs text-pink-100/50">
+                {notificationStatus.enabled ? 'Enabled on this device' : notificationBusy ? 'Enabling…' : 'Enable incoming-call notifications'}
+              </span>
+            </span>
           </button>
 
           <button type="button" onClick={logout} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm text-pink-100 transition hover:bg-white/[0.05]">
@@ -99,6 +146,7 @@ export default function UniverseUs() {
             <span>{resetBusy ? 'Clearing shared data…' : 'Clear shared data'}</span>
           </button>
         </div>
+        {notificationMessage ? <p className="mt-3 text-xs text-pink-100/60">{notificationMessage}</p> : null}
       </section>
     </div>
   );
