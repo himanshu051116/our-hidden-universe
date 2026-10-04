@@ -4,14 +4,20 @@ import { db, firebaseEnabled } from './firebase.js';
 const watchPartyKey = 'ohu-watch-party-v1';
 const localChangeEvent = 'ohu-watch-party-change';
 
+function createId() {
+  return crypto.randomUUID();
+}
+
 export const emptyWatchParty = {
   title: '',
   sourceType: 'external',
   sourceUrl: '',
+  sessionId: '',
   playback: {
     action: 'pause',
     currentTime: 0,
     commandId: '',
+    sessionId: '',
     executeAt: 0,
     delayMs: 0,
     sentAt: 0,
@@ -21,6 +27,9 @@ export const emptyWatchParty = {
   sync: {
     currentTime: 0,
     playing: false,
+    buffering: false,
+    sampleId: '',
+    sessionId: '',
     sentAt: 0,
     updatedBy: '',
     updatedByName: '',
@@ -31,6 +40,7 @@ function normalizeWatchParty(value = {}) {
   return {
     ...emptyWatchParty,
     ...value,
+    sessionId: value.sessionId || '',
     playback: {
       ...emptyWatchParty.playback,
       ...(value.playback || {}),
@@ -56,6 +66,10 @@ function saveLocalWatchParty(value) {
   window.dispatchEvent(new Event(localChangeEvent));
 }
 
+function coupleReady(coupleId, user) {
+  return Boolean(coupleId && user?.uid);
+}
+
 export function subscribeWatchParty(coupleId, onChange, onError) {
   if (!firebaseEnabled || !coupleId) {
     const emit = () => onChange(loadLocalWatchParty());
@@ -71,18 +85,46 @@ export function subscribeWatchParty(coupleId, onChange, onError) {
   );
 }
 
-export async function saveWatchPartySetup(coupleId, user, setup) {
+export async function saveWatchPartySetup(coupleId, user, setup, { resetPlayback = false } = {}) {
+  const sessionId = setup.sessionId || createId();
+  const actor = {
+    updatedBy: user?.uid || 'local',
+    updatedByName: user?.displayName || user?.email || 'You',
+  };
   const payload = {
     title: setup.title || '',
     sourceType: setup.sourceType || 'external',
     sourceUrl: setup.sourceUrl || '',
-    updatedBy: user?.uid || 'local',
-    updatedByName: user?.displayName || user?.email || 'You',
+    sessionId,
+    ...actor,
   };
 
-  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
+  if (resetPlayback) {
+    const sentAt = Date.now();
+    payload.playback = {
+      action: 'pause',
+      currentTime: 0,
+      commandId: createId(),
+      sessionId,
+      executeAt: sentAt,
+      delayMs: 0,
+      sentAt,
+      ...actor,
+    };
+    payload.sync = {
+      currentTime: 0,
+      playing: false,
+      buffering: false,
+      sampleId: createId(),
+      sessionId,
+      sentAt,
+      ...actor,
+    };
+  }
+
+  if (!firebaseEnabled || !coupleReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), ...payload });
-    return;
+    return { sessionId };
   }
 
   await setDoc(
@@ -90,10 +132,7 @@ export async function saveWatchPartySetup(coupleId, user, setup) {
     { ...payload, updatedAt: serverTimestamp() },
     { merge: true },
   );
-}
-
-function couIdReady(coupleId, user) {
-  return Boolean(coupleId && user?.uid);
+  return { sessionId };
 }
 
 export async function sendWatchPartyCommand(coupleId, user, command) {
@@ -101,7 +140,8 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
   const playback = {
     action: command.action || 'pause',
     currentTime: Math.max(0, Number(command.currentTime) || 0),
-    commandId: crypto.randomUUID(),
+    commandId: createId(),
+    sessionId: command.sessionId || '',
     executeAt: Number(command.executeAt) || sentAt,
     delayMs: Math.max(0, Number(command.delayMs) || 0),
     sentAt,
@@ -109,7 +149,7 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     updatedByName: user?.displayName || user?.email || 'You',
   };
 
-  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
+  if (!firebaseEnabled || !coupleReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), playback });
     return playback;
   }
@@ -126,12 +166,15 @@ export async function sendWatchPartyHeartbeat(coupleId, user, state) {
   const sync = {
     currentTime: Math.max(0, Number(state.currentTime) || 0),
     playing: Boolean(state.playing),
+    buffering: Boolean(state.buffering),
+    sampleId: createId(),
+    sessionId: state.sessionId || '',
     sentAt: Date.now(),
     updatedBy: user?.uid || 'local',
     updatedByName: user?.displayName || user?.email || 'You',
   };
 
-  if (!firebaseEnabled || !couIdReady(coupleId, user)) {
+  if (!firebaseEnabled || !coupleReady(coupleId, user)) {
     saveLocalWatchParty({ ...loadLocalWatchParty(), sync });
     return sync;
   }
