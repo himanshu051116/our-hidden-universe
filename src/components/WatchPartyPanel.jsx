@@ -181,9 +181,7 @@ export default function WatchPartyPanel() {
       coupleId,
       (nextRoom) => {
         const sessionChanged = Boolean(
-          previousSessionRef.current &&
-          nextRoom.sessionId &&
-          previousSessionRef.current !== nextRoom.sessionId,
+          nextRoom.sessionId && previousSessionRef.current !== nextRoom.sessionId,
         );
 
         if (
