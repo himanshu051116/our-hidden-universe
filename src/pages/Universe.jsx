@@ -47,7 +47,7 @@ export default function Universe() {
   }
 
   return (
-    <PageShell className="px-4 pb-32 pt-5 sm:px-8 sm:pb-28 sm:pt-6">
+    <PageShell className="px-4 pb-32 pt-5 sm:px-8 sm:pb-28 sm:pt-6 lg:pb-10 lg:pt-24">
       <div className="mx-auto w-full max-w-6xl">
         {resetStatus ? (
           <p className="mb-4 rounded-2xl border border-white/15 bg-black/35 px-4 py-2 text-xs text-pink-100/85">
