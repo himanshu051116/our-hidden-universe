@@ -1,20 +1,5 @@
-import { ArrowRight, BookOpen, Clapperboard, Music2, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, Clapperboard, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-const secondaryActivities = [
-  {
-    title: 'Read Together',
-    description: 'Keep your current reading spot side by side without turning Home into an editor.',
-    to: '/universe/extras#read-together',
-    icon: BookOpen,
-  },
-  {
-    title: 'Our Playlist',
-    description: 'Keep the songs and links you return to together in one place.',
-    to: '/universe/extras',
-    icon: Music2,
-  },
-];
 
 export default function UniverseTogether() {
   return (
@@ -25,7 +10,7 @@ export default function UniverseTogether() {
           Together
         </p>
         <h2 className="mt-1 font-display text-3xl leading-tight text-white sm:text-4xl">Do something together, even from far away.</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/65">Watch, read and listen without digging through unrelated settings.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/65">Watch in sync or keep your reading progress side by side without digging through unrelated settings.</p>
       </section>
 
       <Link
@@ -47,28 +32,23 @@ export default function UniverseTogether() {
         </div>
       </Link>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {secondaryActivities.map(({ title, description, to, icon: Icon }) => (
-          <Link
-            key={title}
-            to={to}
-            className="group glass rounded-2xl p-4 transition hover:border-blush/40 sm:rounded-3xl sm:p-5"
-          >
-            <div className="flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-roseGold">
-                <Icon size={18} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-display text-2xl text-white">{title}</h3>
-                <p className="mt-1 text-sm leading-5 text-pink-100/62">{description}</p>
-                <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">
-                  Open <ArrowRight size={14} className="transition group-hover:translate-x-1" />
-                </span>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
+      <Link
+        to="/universe/together/read"
+        className="group glass block rounded-2xl p-4 transition hover:border-blush/40 sm:rounded-3xl sm:p-5"
+      >
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-roseGold">
+            <BookOpen size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-display text-2xl text-white">Read Together</h3>
+            <p className="mt-1 max-w-xl text-sm leading-5 text-pink-100/62">Save where you are, see your partner's spot, and continue from one dedicated reading screen.</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">
+              Open reading <ArrowRight size={14} className="transition group-hover:translate-x-1" />
+            </span>
+          </div>
+        </div>
+      </Link>
     </div>
   );
 }
