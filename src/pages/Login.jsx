@@ -43,9 +43,10 @@ export default function Login() {
           Join your partner with a couple code, or create a new private universe for the two of you.
         </p>
 
-        <div className="mt-4 flex rounded-full bg-black/35 p-1">
+        <div className="mt-4 flex rounded-full bg-black/35 p-1" role="group" aria-label="Choose how to enter OHS">
           <button
             type="button"
+            aria-pressed={mode === 'login'}
             onClick={() => setMode('login')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'login' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
@@ -53,6 +54,7 @@ export default function Login() {
           </button>
           <button
             type="button"
+            aria-pressed={mode === 'signup'}
             onClick={() => setMode('signup')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'signup' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
