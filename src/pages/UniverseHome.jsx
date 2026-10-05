@@ -1,18 +1,18 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, BookOpen, Heart, Settings2, Video, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Clapperboard, Heart, Settings2, Video, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
 import HomeNightSky from '../components/HomeNightSky.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  loadLocalProfile,
   loadLocalReadTogether,
   subscribeCoupleMembers,
   subscribeReadTogether,
   touchMemberPresence,
 } from '../services/coupleDashboardService.js';
 import { firebaseEnabled } from '../services/firebase.js';
+import { emptyWatchParty, subscribeWatchParty } from '../services/watchPartyService.js';
 
 const sunSecretPassword = 'jaan';
 const sunSurpriseImage = '/secret-sun-surprise.jpeg';
@@ -24,38 +24,22 @@ function toDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getPartnerStatus(members, userId, membersLoaded, memberError) {
+function getPartnerStatus(members, userId, membersLoaded, memberError, now) {
   if (memberError) {
-    return {
-      label: 'Presence unavailable',
-      tone: 'error',
-      detail: 'We could not refresh your partner status. Try again in a moment.',
-    };
+    return { label: 'Presence unavailable', tone: 'error', detail: 'Partner status could not refresh right now.' };
   }
   if (!firebaseEnabled) {
-    return {
-      label: 'Preview mode',
-      tone: 'idle',
-      detail: 'Partner presence appears when the shared room connection is available.',
-    };
+    return { label: 'Preview mode', tone: 'idle', detail: 'Partner presence appears when the shared room connection is available.' };
   }
   if (!membersLoaded) {
-    return {
-      label: 'Checking your universe',
-      tone: 'idle',
-      detail: 'Looking for your partner.',
-    };
+    return { label: 'Checking your universe', tone: 'idle', detail: 'Looking for your partner.' };
   }
   const partner = members.find((member) => member.id !== userId);
   if (!partner) {
-    return {
-      label: 'Waiting for partner',
-      tone: 'waiting',
-      detail: 'Share your couple code from Us when they are ready to join.',
-    };
+    return { label: 'Waiting for partner', tone: 'waiting', detail: 'Share your couple code from Us when they are ready to join.' };
   }
   const lastActive = toDate(partner.lastActiveAt);
-  const online = lastActive ? Date.now() - lastActive.getTime() < 2 * 60 * 1000 : false;
+  const online = lastActive ? now - lastActive.getTime() < 2 * 60 * 1000 : false;
   return {
     label: online ? 'Partner is here' : 'Partner is away',
     tone: online ? 'online' : 'offline',
@@ -65,20 +49,31 @@ function getPartnerStatus(members, userId, membersLoaded, memberError) {
   };
 }
 
+function formatTime(value) {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+    : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
 export default function UniverseHome() {
   const { user, coupleId } = useAuth();
   const { startCall, partner: callPartner, call } = useCall();
-  const [profile] = useState(() => loadLocalProfile());
   const [members, setMembers] = useState([]);
   const [membersLoaded, setMembersLoaded] = useState(!firebaseEnabled);
   const [memberError, setMemberError] = useState('');
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [readTogether, setReadTogether] = useState(() => loadLocalReadTogether());
+  const [watchRoom, setWatchRoom] = useState(emptyWatchParty);
   const [callError, setCallError] = useState('');
   const [sunSecretOpen, setSunSecretOpen] = useState(false);
   const [sunSecretUnlocked, setSunSecretUnlocked] = useState(false);
   const [sunPassword, setSunPassword] = useState('');
   const [sunError, setSunError] = useState('');
-  const partnerStatus = getPartnerStatus(members, user?.uid, membersLoaded, memberError);
+  const partnerStatus = getPartnerStatus(members, user?.uid, membersLoaded, memberError, presenceNow);
 
   useEffect(() => {
     setMemberError('');
@@ -88,6 +83,7 @@ export default function UniverseHome() {
       (nextMembers) => {
         setMembers(nextMembers);
         setMembersLoaded(true);
+        setPresenceNow(Date.now());
       },
       () => {
         setMemberError('blocked');
@@ -96,6 +92,7 @@ export default function UniverseHome() {
     );
     touchMemberPresence(coupleId, user).catch(() => setMemberError('blocked'));
     const presenceTimer = window.setInterval(() => {
+      setPresenceNow(Date.now());
       touchMemberPresence(coupleId, user).catch(() => setMemberError('blocked'));
     }, 45000);
 
@@ -121,6 +118,11 @@ export default function UniverseHome() {
     });
     return () => unsubscribe?.();
   }, [coupleId, user?.uid]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeWatchParty(coupleId, setWatchRoom, () => {});
+    return () => unsubscribe?.();
+  }, [coupleId]);
 
   async function startVideoCall() {
     setCallError('');
@@ -154,23 +156,20 @@ export default function UniverseHome() {
   }
 
   const videoCallDisabled = !callPartner || call.status !== 'idle';
-  const readingLabel = readTogether.title || 'Choose something to do together';
   const selfSpot = [readTogether.selfChapter, readTogether.selfPage].filter(Boolean).join(' · ');
   const partnerSpot = [readTogether.partnerChapter, readTogether.partnerPage].filter(Boolean).join(' · ');
-  const readingDetail = readTogether.title
-    ? [
-        selfSpot ? `You: ${selfSpot}` : 'Save your current reading spot',
-        partnerSpot ? `${readTogether.partnerName || 'Partner'}: ${partnerSpot}` : '',
-      ].filter(Boolean).join(' · ')
-    : 'Watch something, read together, or start a shared activity.';
+  const hasReading = Boolean(readTogether.title || selfSpot || partnerSpot);
+  const watchConfigured = Boolean(watchRoom.title || watchRoom.sourceUrl);
+  const watchTime = Math.max(Number(watchRoom.sync?.currentTime) || 0, Number(watchRoom.playback?.currentTime) || 0);
+  const hasContinue = watchConfigured || hasReading;
 
   return (
     <div className="space-y-4 sm:space-y-5">
       <section className="glass rounded-3xl px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Together today</p>
-            <h1 className="mt-1 truncate font-display text-3xl leading-tight text-white sm:text-4xl">{profile.coupleName || 'Our Hidden Universe'}</h1>
+            <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Home</p>
+            <h1 className="mt-1 font-display text-3xl leading-tight text-white sm:text-4xl">Your universe, right now.</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-pink-100/62">
               <PartnerDot tone={partnerStatus.tone} />
               <span className="font-medium text-pink-100/85">{partnerStatus.label}</span>
@@ -180,7 +179,7 @@ export default function UniverseHome() {
           <Link
             to="/universe/us"
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-pink-100/70 transition hover:border-blush/40 hover:text-white"
-            aria-label="Open your universe settings"
+            aria-label="Open Us and account settings"
           >
             <Settings2 size={18} />
           </Link>
@@ -193,28 +192,53 @@ export default function UniverseHome() {
           className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto sm:min-w-44"
         >
           <Video size={17} />
-          {call.status === 'idle' ? 'Start video call' : 'Call in progress'}
+          {call.status !== 'idle' ? 'Call in progress' : callPartner ? 'Start video call' : 'Video call unavailable'}
         </button>
         {callError ? <p className="mt-2 text-xs text-red-200">{callError}</p> : null}
       </section>
 
       <HomeNightSky onSunSecret={openSunSecret} />
 
-      <Link to="/universe/together" className="group glass block rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
-        <div className="flex items-start gap-3">
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blush/10 text-blush ring-1 ring-blush/15">
-            <BookOpen size={18} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Continue together</p>
-            <h2 className="mt-1 font-display text-2xl text-white">{readingLabel}</h2>
-            <p className="mt-1 text-sm leading-6 text-pink-100/60">{readingDetail}</p>
-            <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">
-              Open Together <ArrowRight size={14} className="transition group-hover:translate-x-1" />
-            </span>
+      <section>
+        <div className="mb-3 flex items-end justify-between gap-3 px-1">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Continue</p>
+            <h2 className="mt-1 font-display text-2xl text-white">Pick up what you were doing together.</h2>
           </div>
+          {hasContinue ? <Link to="/universe/together" className="shrink-0 text-xs font-semibold text-blush hover:text-white">Together →</Link> : null}
         </div>
-      </Link>
+
+        {hasContinue ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {watchConfigured ? (
+              <Link to="/universe/together/watch" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
+                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold"><Clapperboard size={14} /> Watch Together</p>
+                <h3 className="mt-2 truncate font-display text-2xl text-white">{watchRoom.title || 'Shared watch room'}</h3>
+                <p className="mt-1 text-sm text-pink-100/60">{watchTime > 0 ? `Continue around ${formatTime(watchTime)}.` : 'Your shared watch room is ready.'}</p>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Open watch room <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
+              </Link>
+            ) : null}
+
+            {hasReading ? (
+              <Link to="/universe/together/read" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
+                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold"><BookOpen size={14} /> Read Together</p>
+                <h3 className="mt-2 truncate font-display text-2xl text-white">{readTogether.title || 'Current shared read'}</h3>
+                <p className="mt-1 text-sm text-pink-100/60">
+                  {selfSpot ? `You: ${selfSpot}` : 'Your spot is not saved yet'}
+                  {partnerSpot ? ` · ${readTogether.partnerName || 'Partner'}: ${partnerSpot}` : ''}
+                </p>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Continue reading <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
+              </Link>
+            ) : null}
+          </div>
+        ) : (
+          <Link to="/universe/together" className="group block rounded-3xl border border-dashed border-white/12 bg-black/20 px-5 py-7 text-center transition hover:border-blush/40 hover:bg-black/28">
+            <p className="font-display text-2xl text-white">Nothing waiting to be resumed.</p>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-pink-100/52">Start a Watch Together room or save your reading progress, and Home will bring it back here automatically.</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Choose something together <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
+          </Link>
+        )}
+      </section>
 
       {sunSecretOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/75 px-4 py-6 backdrop-blur-sm">
