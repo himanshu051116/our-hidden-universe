@@ -9,25 +9,29 @@ const experienceLinks = [
     to: '/universe/memories',
     icon: Images,
     title: 'Memories',
-    description: 'Photos, notes, voice moments and milestones you have saved.',
+    description: 'Shared photos, notes, voice moments and milestones that stay with your universe.',
+    meta: 'Shared',
   },
   {
     to: '/universe/open-when',
     icon: Heart,
     title: 'Open When',
-    description: 'Letters for the moments that need something personal.',
+    description: 'Shared letters for the moments that need something personal.',
+    meta: 'Shared',
   },
   {
     to: '/universe/extras',
     icon: ListTodo,
-    title: 'Plans & shared life',
-    description: 'Countdown, lists and the remaining legacy shared-life tools while they are migrated.',
+    title: 'Plans & little things',
+    description: 'Your synced Bucket List plus clearly separated countdown, playlist and dream notes saved only on this device.',
+    meta: 'Mixed',
   },
   {
     to: '/birthday-surprise',
     icon: Cake,
     title: 'Surprises',
-    description: 'Special-event experiences without crowding the everyday navigation.',
+    description: 'Special-event experiences kept away from the everyday navigation.',
+    meta: 'Occasional',
   },
 ];
 
@@ -82,18 +86,21 @@ export default function UniverseUs() {
           Us
         </p>
         <h2 className="mt-1 font-display text-3xl text-white sm:text-4xl">The quieter parts of your universe.</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/62">Memories, letters, plans and account controls live here instead of competing with the things you use every day.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/62">Shared memories and letters live beside lower-frequency plans and account controls, without competing with Chat, Together, or Night Sky.</p>
       </section>
 
       <section className="grid gap-3 md:grid-cols-2">
-        {experienceLinks.map(({ to, icon: Icon, title, description }) => (
+        {experienceLinks.map(({ to, icon: Icon, title, description, meta }) => (
           <Link key={title} to={to} className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
             <div className="flex items-start gap-3">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-roseGold">
                 <Icon size={18} />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="font-display text-2xl text-white">{title}</h3>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-display text-2xl text-white">{title}</h3>
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-pink-100/42">{meta}</span>
+                </div>
                 <p className="mt-1 text-sm leading-5 text-pink-100/60">{description}</p>
                 <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">
                   Open <ArrowRight size={14} className="transition group-hover:translate-x-1" />
