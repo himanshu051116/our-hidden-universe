@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, BookOpen, Heart, MessageCircleHeart, Settings2, Sparkles, Video, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Heart, Settings2, Video, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
@@ -154,16 +154,22 @@ export default function UniverseHome() {
   }
 
   const videoCallDisabled = !callPartner || call.status !== 'idle';
-  const readingLabel = readTogether.title || 'No shared read selected yet';
+  const readingLabel = readTogether.title || 'Choose something to do together';
   const selfSpot = [readTogether.selfChapter, readTogether.selfPage].filter(Boolean).join(' · ');
   const partnerSpot = [readTogether.partnerChapter, readTogether.partnerPage].filter(Boolean).join(' · ');
+  const readingDetail = readTogether.title
+    ? [
+        selfSpot ? `You: ${selfSpot}` : 'Save your current reading spot',
+        partnerSpot ? `${readTogether.partnerName || 'Partner'}: ${partnerSpot}` : '',
+      ].filter(Boolean).join(' · ')
+    : 'Watch something, read together, or start a shared activity.';
 
   return (
     <div className="space-y-4 sm:space-y-5">
       <section className="glass rounded-3xl px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Our Hidden Universe</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-roseGold">Together today</p>
             <h1 className="mt-1 truncate font-display text-3xl leading-tight text-white sm:text-4xl">{profile.coupleName || 'Our Hidden Universe'}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-pink-100/62">
               <PartnerDot tone={partnerStatus.tone} />
@@ -174,54 +180,41 @@ export default function UniverseHome() {
           <Link
             to="/universe/us"
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-pink-100/70 transition hover:border-blush/40 hover:text-white"
-            aria-label="Open your universe settings and extras"
+            aria-label="Open your universe settings"
           >
             <Settings2 size={18} />
           </Link>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <Link to="/universe/chat" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-2 text-xs font-semibold text-pink-100 transition hover:border-blush/45">
-            <MessageCircleHeart size={16} />
-            Message
-          </Link>
-          <button
-            type="button"
-            onClick={startVideoCall}
-            disabled={videoCallDisabled}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blush to-roseGold px-2 text-xs font-semibold text-midnight transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Video size={16} />
-            Video
-          </button>
-          <Link to="/universe/together" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-2 text-xs font-semibold text-pink-100 transition hover:border-blush/45">
-            <Sparkles size={16} />
-            Together
-          </Link>
-        </div>
+        <button
+          type="button"
+          onClick={startVideoCall}
+          disabled={videoCallDisabled}
+          className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto sm:min-w-44"
+        >
+          <Video size={17} />
+          {call.status === 'idle' ? 'Start video call' : 'Call in progress'}
+        </button>
         {callError ? <p className="mt-2 text-xs text-red-200">{callError}</p> : null}
       </section>
 
       <HomeNightSky onSunSecret={openSunSecret} />
 
-      <section className="grid gap-3 lg:grid-cols-2">
-        <Link to="/universe/together/watch" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
-          <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Continue together</p>
-          <h2 className="mt-2 font-display text-2xl text-white">Watch Together</h2>
-          <p className="mt-1 text-sm text-pink-100/60">Open your shared watch room and pick up where you left off.</p>
-          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Open watch room <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
-        </Link>
-
-        <Link to="/universe/together/read" className="group glass rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
-          <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-roseGold"><BookOpen size={14} /> Read Together</p>
-          <h2 className="mt-2 font-display text-2xl text-white">{readingLabel}</h2>
-          <p className="mt-1 text-sm text-pink-100/60">
-            {selfSpot ? `You: ${selfSpot}` : 'Save your current spot'}
-            {partnerSpot ? ` · ${readTogether.partnerName || 'Partner'}: ${partnerSpot}` : ''}
-          </p>
-          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">Update progress <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
-        </Link>
-      </section>
+      <Link to="/universe/together" className="group glass block rounded-2xl p-4 transition hover:border-blush/45 sm:rounded-3xl sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blush/10 text-blush ring-1 ring-blush/15">
+            <BookOpen size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Continue together</p>
+            <h2 className="mt-1 font-display text-2xl text-white">{readingLabel}</h2>
+            <p className="mt-1 text-sm leading-6 text-pink-100/60">{readingDetail}</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blush">
+              Open Together <ArrowRight size={14} className="transition group-hover:translate-x-1" />
+            </span>
+          </div>
+        </div>
+      </Link>
 
       {sunSecretOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/75 px-4 py-6 backdrop-blur-sm">
