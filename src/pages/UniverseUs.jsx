@@ -150,7 +150,7 @@ export default function UniverseUs() {
             className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm text-red-200 transition hover:bg-red-300/[0.05] disabled:opacity-50"
           >
             <DatabaseZap size={17} />
-            <span>{resetBusy ? 'Clearing shared data…' : 'Clear shared data'}</span>
+            <span>{resetBusy ? 'Clearing saved OHS data…' : 'Clear saved OHS data'}</span>
           </button>
         </div>
         {notificationMessage ? <p className="mt-3 text-xs text-pink-100/60">{notificationMessage}</p> : null}

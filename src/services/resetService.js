@@ -2,7 +2,7 @@ import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { deleteObject, listAll, ref } from 'firebase/storage';
 import { db, firebaseEnabled, storage } from './firebase';
 
-const demoKeys = [
+const localKeys = [
   'ohu-demo-messages-v1',
   'ohu-memories-v1',
   'ohu-extras-v1',
@@ -12,6 +12,7 @@ const demoKeys = [
   'ohu-watch-party-v1',
   'ohu-night-sky-v1',
   'ohu-now-photos-v1',
+  'ohu-open-when-v1',
 ];
 
 const collectionNames = [
@@ -20,6 +21,9 @@ const collectionNames = [
   'openWhen',
   'bucketList',
   'readTogether',
+  // Current production call signaling also lives inside watchParty with _kind
+  // discriminators, so deleting this collection clears both watch state and
+  // any lingering call/candidate signaling records without touching /calls.
   'watchParty',
   'skyStars',
   'skySignals',
@@ -31,34 +35,14 @@ const collectionNames = [
   'callHistory',
 ];
 
-function clearLocalDemoState() {
-  demoKeys.forEach((key) => localStorage.removeItem(key));
+function clearLocalState() {
+  localKeys.forEach((key) => localStorage.removeItem(key));
 }
 
 async function deleteCollection(coupleId, name) {
   const snapshot = await getDocs(collection(db, 'couples', coupleId, name));
   await Promise.all(snapshot.docs.map((entry) => deleteDoc(doc(db, 'couples', coupleId, name, entry.id))));
   return snapshot.size;
-}
-
-async function deleteCallData(coupleId) {
-  const calls = await getDocs(collection(db, 'couples', coupleId, 'calls'));
-  let deleted = 0;
-
-  for (const call of calls.docs) {
-    for (const candidateCollection of ['callerCandidates', 'calleeCandidates']) {
-      const candidates = await getDocs(
-        collection(db, 'couples', coupleId, 'calls', call.id, candidateCollection),
-      );
-      await Promise.all(candidates.docs.map((candidate) => deleteDoc(candidate.ref)));
-      deleted += candidates.size;
-    }
-
-    await deleteDoc(call.ref);
-    deleted += 1;
-  }
-
-  return deleted;
 }
 
 async function deleteStorageFolder(folderPath) {
@@ -84,7 +68,7 @@ async function deleteStorageFolder(folderPath) {
 }
 
 export async function resetCoupleData(coupleId) {
-  clearLocalDemoState();
+  clearLocalState();
 
   if (!firebaseEnabled || !coupleId) {
     return { deletedDocs: 0, deletedFiles: 0, mode: 'local' };
@@ -95,8 +79,6 @@ export async function resetCoupleData(coupleId) {
   for (const name of collectionNames) {
     deletedDocs += await deleteCollection(coupleId, name);
   }
-
-  deletedDocs += await deleteCallData(coupleId);
 
   const deletedFiles = await deleteStorageFolder(`couples/${coupleId}`);
   return { deletedDocs, deletedFiles, mode: 'firebase' };
