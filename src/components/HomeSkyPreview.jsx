@@ -4,6 +4,13 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { sendSkySignal, subscribeNightSky } from '../services/nightSkyService.js';
 
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') return value.toDate();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function signalEmoji(signal) {
   if (!signal) return '✨';
   if (signal.type === 'heartbeat') return '💓';
@@ -16,6 +23,7 @@ export default function HomeSkyPreview({ onSunSecret }) {
   const [sky, setSky] = useState({ stars: [], signals: [] });
   const [status, setStatus] = useState('');
   const [sending, setSending] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
     setStatus('');
@@ -27,9 +35,18 @@ export default function HomeSkyPreview({ onSunSecret }) {
     return () => unsubscribe?.();
   }, [coupleId]);
 
-  const latestSignal = sky.signals?.[0];
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const stars = sky.stars || [];
   const previewStars = useMemo(() => stars.slice(0, 7), [stars]);
+  const freshPartnerSignal = (sky.signals || []).find((signal) => {
+    if (signal.senderId && signal.senderId === user?.uid) return false;
+    const createdAt = toDate(signal.createdAt)?.getTime();
+    return createdAt && clock - createdAt <= 2 * 60 * 1000;
+  });
 
   async function sendHeartbeat() {
     if (sending) return;
@@ -47,11 +64,11 @@ export default function HomeSkyPreview({ onSunSecret }) {
 
   return (
     <section className="glass overflow-hidden rounded-3xl">
-      <div className="relative min-h-[280px] overflow-hidden bg-[#030510] p-4 sm:min-h-[310px] sm:p-5">
+      <div className="relative min-h-[245px] overflow-hidden bg-[#030510] p-4 sm:min-h-[270px] sm:p-5">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,182,200,.18),transparent_16rem),radial-gradient(circle_at_78%_35%,rgba(164,220,255,.14),transparent_18rem),linear-gradient(145deg,#020410,#0b1024_42%,#170a1d_74%,#05040a)]" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[radial-gradient(ellipse_at_center_bottom,rgba(255,182,200,.18),transparent_65%)]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-[radial-gradient(ellipse_at_center_bottom,rgba(255,182,200,.18),transparent_65%)]" />
 
-        {Array.from({ length: 24 }, (_, index) => (
+        {Array.from({ length: 20 }, (_, index) => (
           <span
             key={`ambient-${index}`}
             className="pointer-events-none absolute h-1 w-1 rounded-full bg-white/65"
@@ -69,11 +86,11 @@ export default function HomeSkyPreview({ onSunSecret }) {
               <Stars size={14} />
               Night Sky
             </p>
-            <h2 className="mt-2 font-display text-3xl text-white sm:text-4xl">A glimpse of your sky</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-pink-100/60">
+            <h2 className="mt-2 font-display text-3xl text-white">Your sky right now</h2>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-pink-100/58">
               {stars.length
-                ? `${stars.length} ${stars.length === 1 ? 'star' : 'stars'} are waiting in your shared sky.`
-                : 'Your shared sky is quiet. Open it when you want to leave a star or signal.'}
+                ? `${stars.length} ${stars.length === 1 ? 'star' : 'stars'} in your shared universe.`
+                : 'Your shared sky is quiet. Leave a star or signal when something is on your mind.'}
             </p>
           </div>
 
@@ -89,7 +106,7 @@ export default function HomeSkyPreview({ onSunSecret }) {
           ) : null}
         </div>
 
-        <div className="relative z-10 mt-5 h-24 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/20">
+        <div className="relative z-10 mt-4 h-20 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/20">
           {previewStars.length ? previewStars.map((star, index) => (
             <span
               key={star.id || `${star.title}-${index}`}
@@ -106,15 +123,15 @@ export default function HomeSkyPreview({ onSunSecret }) {
             </div>
           )}
 
-          {latestSignal ? (
-            <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2 rounded-full border border-blush/20 bg-blush/10 px-3 py-2 text-xs text-pink-100/80">
-              <span className="text-lg" aria-hidden="true">{signalEmoji(latestSignal)}</span>
-              Latest signal
+          {freshPartnerSignal ? (
+            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2 rounded-full border border-blush/20 bg-blush/10 px-3 py-2 text-xs text-pink-100/80">
+              <span className="text-lg" aria-hidden="true">{signalEmoji(freshPartnerSignal)}</span>
+              Partner signal
             </div>
           ) : null}
         </div>
 
-        <div className="relative z-10 mt-4 flex flex-wrap items-center gap-2">
+        <div className="relative z-10 mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={sendHeartbeat}
@@ -129,7 +146,7 @@ export default function HomeSkyPreview({ onSunSecret }) {
             className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm font-semibold text-pink-100 transition hover:border-blush/45 hover:text-white"
           >
             <Stars size={15} />
-            Open full sky
+            Open sky
           </Link>
           {status ? <span className="text-xs text-pink-100/55">{status}</span> : null}
         </div>
