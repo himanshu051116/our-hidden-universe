@@ -2,12 +2,16 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
   CheckCheck,
+  ChevronUp,
+  CornerUpLeft,
   Heart,
   ImagePlus,
   Mic,
+  MoreHorizontal,
   Plus,
   Send,
   Timer,
+  Trash2,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -17,6 +21,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import {
   CHAT_LIMITS,
   addReaction,
+  deleteChatMessage,
+  loadOlderEncryptedMessages,
   markMessagesSeen,
   sendEncryptedMessage,
   sendMediaMessage,
@@ -30,6 +36,7 @@ import { toDateValue } from '../utils/date';
 
 const demoStorageKey = 'ohu-demo-messages-v1';
 const emojis = ['❤️', '🥰', '😘', '🫶', '✨', '🌙'];
+const replyPrefix = '↪ ';
 
 function buildDemoMessages() {
   const base = Date.now();
@@ -140,10 +147,42 @@ function readReceiptForMessage(message, userId) {
   return partnerSeen ? 'Seen' : 'Delivered';
 }
 
+function splitReplyText(text = '') {
+  const value = String(text || '');
+  if (!value.startsWith(replyPrefix)) return { quote: '', body: value };
+  const newline = value.indexOf('\n');
+  if (newline < 0) return { quote: value.slice(replyPrefix.length), body: '' };
+  return {
+    quote: value.slice(replyPrefix.length, newline).trim(),
+    body: value.slice(newline + 1),
+  };
+}
+
+function replyQuoteForMessage(message) {
+  if (!message) return 'Earlier message';
+  if (message.type === 'image') return 'Photo';
+  if (message.type === 'voice') return 'Voice note';
+  const parsed = splitReplyText(message.text || message.caption || '');
+  const source = String(parsed.body || parsed.quote || 'Message').replace(/\s+/g, ' ').trim();
+  return source.length > 96 ? `${source.slice(0, 93)}…` : source || 'Message';
+}
+
+function mergeUniqueMessages(...groups) {
+  const map = new Map();
+  groups.flat().forEach((message) => {
+    if (!message) return;
+    const key = message.id || message.clientNonce;
+    if (!key) return;
+    map.set(key, message);
+  });
+  return [...map.values()].sort((a, b) => messageTimestamp(a) - messageTimestamp(b));
+}
+
 export default function ChatPanel({ onMessageCountChange }) {
   const { user, coupleId, sharedSecret } = useAuth();
   const { partner } = useCall();
   const [messages, setMessages] = useState(() => (firebaseEnabled ? [] : readDemoMessages()));
+  const [historyMessages, setHistoryMessages] = useState([]);
   const [pendingMessages, setPendingMessages] = useState([]);
   const [typingMap, setTypingMap] = useState({});
   const [draft, setDraft] = useState('');
@@ -155,6 +194,10 @@ export default function ChatPanel({ onMessageCountChange }) {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [actionsFor, setActionsFor] = useState(null);
 
   const typingTimer = useRef(null);
   const lastTypingPulseRef = useRef(0);
@@ -168,6 +211,7 @@ export default function ChatPanel({ onMessageCountChange }) {
   const seenInFlightRef = useRef(new Set());
   const previewUrlsRef = useRef(new Map());
   const draftRef = useRef('');
+  const historyLoadedRef = useRef(false);
 
   const partnerName = partner?.displayName || partner?.email || 'Your partner';
   const partnerInitial = String(partnerName).trim().charAt(0).toUpperCase() || 'P';
@@ -178,12 +222,26 @@ export default function ChatPanel({ onMessageCountChange }) {
     previewUrlsRef.current.delete(clientNonce);
   }
 
+  const confirmedMessages = useMemo(
+    () => mergeUniqueMessages(historyMessages, messages),
+    [historyMessages, messages],
+  );
+
   const visibleMessages = useMemo(() => {
-    const confirmedNonces = new Set(messages.map((message) => message.clientNonce).filter(Boolean));
-    return [...messages, ...pendingMessages.filter((message) => !confirmedNonces.has(message.clientNonce))]
-      .filter((message) => !isExpired(message, clock))
-      .sort((a, b) => messageTimestamp(a) - messageTimestamp(b));
-  }, [messages, pendingMessages, clock]);
+    const confirmedNonces = new Set(confirmedMessages.map((message) => message.clientNonce).filter(Boolean));
+    return mergeUniqueMessages(
+      confirmedMessages,
+      pendingMessages.filter((message) => !confirmedNonces.has(message.clientNonce)),
+    ).filter((message) => !isExpired(message, clock));
+  }, [confirmedMessages, pendingMessages, clock]);
+
+  useEffect(() => {
+    setHistoryMessages([]);
+    setHasOlder(false);
+    historyLoadedRef.current = false;
+    initialScrollRef.current = false;
+    previousCountRef.current = 0;
+  }, [coupleId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 10000);
@@ -199,6 +257,7 @@ export default function ChatPanel({ onMessageCountChange }) {
         const confirmedNonces = new Set(nextMessages.map((message) => message.clientNonce).filter(Boolean));
         setMessages(nextMessages);
         setSyncMeta(metadata || { fromCache: false, hasPendingWrites: false, receivedAt: Date.now() });
+        if (!historyLoadedRef.current) setHasOlder(Boolean(metadata?.hasOlder));
         setPendingMessages((current) => current.filter((pending) => {
           if (!confirmedNonces.has(pending.clientNonce)) return true;
           cleanupPreview(pending.clientNonce);
@@ -234,7 +293,7 @@ export default function ChatPanel({ onMessageCountChange }) {
     if (!firebaseEnabled || !user?.uid || document.visibilityState !== 'visible') return undefined;
 
     window.clearTimeout(seenTimerRef.current);
-    const unseen = messages.filter((message) =>
+    const unseen = confirmedMessages.filter((message) =>
       message.senderId !== user.uid
       && !(message.seenBy || []).includes(user.uid)
       && !seenInFlightRef.current.has(message.id),
@@ -249,7 +308,7 @@ export default function ChatPanel({ onMessageCountChange }) {
     }, 120);
 
     return () => window.clearTimeout(seenTimerRef.current);
-  }, [messages, coupleId, user?.uid]);
+  }, [confirmedMessages, coupleId, user?.uid]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -265,7 +324,7 @@ export default function ChatPanel({ onMessageCountChange }) {
       return;
     }
 
-    if (!grew) return;
+    if (!grew || loadingOlder) return;
     const shouldFollow = nearBottomRef.current || latest?.senderId === user?.uid || latest?.pending;
     if (shouldFollow) {
       setHasNewMessage(false);
@@ -273,7 +332,7 @@ export default function ChatPanel({ onMessageCountChange }) {
     } else if (latest?.senderId !== user?.uid) {
       setHasNewMessage(true);
     }
-  }, [visibleMessages.length, user?.uid]);
+  }, [visibleMessages.length, user?.uid, loadingOlder]);
 
   useEffect(() => {
     if (!partner || !typingMap[partner.id] || !nearBottomRef.current) return;
@@ -343,6 +402,39 @@ export default function ChatPanel({ onMessageCountChange }) {
     localStorage.setItem(demoStorageKey, JSON.stringify(nextMessages));
   }
 
+  async function loadEarlierMessages() {
+    if (!firebaseEnabled || loadingOlder || !hasOlder) return;
+    const oldest = confirmedMessages.find((message) => message.createdAt);
+    if (!oldest?.createdAt) {
+      setHasOlder(false);
+      return;
+    }
+
+    const container = scrollRef.current;
+    const previousHeight = container?.scrollHeight || 0;
+    setLoadingOlder(true);
+    setNotice('');
+    try {
+      const result = await loadOlderEncryptedMessages({
+        coupleId,
+        sharedSecret,
+        beforeCreatedAt: oldest.createdAt,
+      });
+      historyLoadedRef.current = true;
+      setHistoryMessages((current) => mergeUniqueMessages(result.messages, current));
+      setHasOlder(result.hasMore);
+      requestAnimationFrame(() => {
+        if (!container) return;
+        const nextHeight = container.scrollHeight;
+        container.scrollTop += Math.max(0, nextHeight - previousHeight);
+      });
+    } catch {
+      setNotice('Couldn’t load earlier messages. Try again when your connection is stable.');
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
   async function sendLocalMessage({ text, file }) {
     let mediaUrl = '';
     let type = 'text';
@@ -370,9 +462,13 @@ export default function ChatPanel({ onMessageCountChange }) {
   async function sendCurrentMessage() {
     const cleanDraft = draft.trim();
     const currentAttachment = attachment;
+    const currentReply = replyingTo;
     if (!cleanDraft && !currentAttachment) return;
-    if (cleanDraft.length > CHAT_LIMITS.maxMessageLength) {
-      setNotice(`Messages can be up to ${CHAT_LIMITS.maxMessageLength} characters.`);
+
+    const quote = currentReply && !currentAttachment ? replyQuoteForMessage(currentReply) : '';
+    const outgoingText = quote ? `${replyPrefix}${quote}\n${cleanDraft}` : cleanDraft;
+    if (outgoingText.length > CHAT_LIMITS.maxMessageLength) {
+      setNotice(`Messages, including the reply preview, can be up to ${CHAT_LIMITS.maxMessageLength} characters.`);
       return;
     }
 
@@ -381,11 +477,12 @@ export default function ChatPanel({ onMessageCountChange }) {
     setDraft('');
     draftRef.current = '';
     setAttachment(null);
+    setReplyingTo(null);
     setToolsOpen(false);
 
     if (!firebaseEnabled) {
       try {
-        await sendLocalMessage({ text: cleanDraft, file: currentAttachment });
+        await sendLocalMessage({ text: outgoingText, file: currentAttachment });
         setSelfDestruct('keep');
       } catch {
         setNotice('Unable to send that message.');
@@ -401,7 +498,7 @@ export default function ChatPanel({ onMessageCountChange }) {
         id: `pending-${clientNonce}`,
         clientNonce,
         senderId: user.uid,
-        text: cleanDraft,
+        text: outgoingText,
         type: 'text',
         optimisticAt,
         pending: true,
@@ -416,7 +513,7 @@ export default function ChatPanel({ onMessageCountChange }) {
         coupleId,
         sharedSecret,
         senderId: user.uid,
-        text: cleanDraft,
+        text: outgoingText,
         selfDestructAt: optimistic.selfDestructAt,
         clientNonce,
       }).catch(() => {
@@ -426,6 +523,7 @@ export default function ChatPanel({ onMessageCountChange }) {
           draftRef.current = cleanDraft;
           return cleanDraft;
         });
+        if (currentReply) setReplyingTo(currentReply);
         setNotice('Message didn’t send. Your text was restored so you can retry.');
       });
       return;
@@ -494,6 +592,41 @@ export default function ChatPanel({ onMessageCountChange }) {
     await addReaction(coupleId, messageId, '❤️').catch(() => {});
   }
 
+  async function handleDelete(message) {
+    if (!message || message.senderId !== user.uid) return;
+    setActionsFor(null);
+    if (message.pending) {
+      setPendingMessages((current) => current.filter((item) => item.clientNonce !== message.clientNonce));
+      cleanupPreview(message.clientNonce);
+      return;
+    }
+
+    const confirmed = window.confirm('Delete this message for both of you?');
+    if (!confirmed) return;
+
+    if (!firebaseEnabled) {
+      persistLocal(messages.filter((item) => item.id !== message.id));
+      return;
+    }
+
+    try {
+      await deleteChatMessage(coupleId, message.id);
+      setHistoryMessages((current) => current.filter((item) => item.id !== message.id));
+    } catch {
+      setNotice('That message could not be deleted. Try again.');
+    }
+  }
+
+  function startReply(message) {
+    if (!message || message.pending) return;
+    setReplyingTo(message);
+    setActionsFor(null);
+    setAttachment(null);
+    requestAnimationFrame(() => {
+      document.querySelector('[data-chat-composer]')?.focus();
+    });
+  }
+
   function onScroll() {
     const container = scrollRef.current;
     if (!container) return;
@@ -535,6 +668,7 @@ export default function ChatPanel({ onMessageCountChange }) {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
         setAttachment(file);
+        setReplyingTo(null);
         recorder.stream.getTracks().forEach((track) => track.stop());
         recorderRef.current = null;
       };
@@ -578,9 +712,25 @@ export default function ChatPanel({ onMessageCountChange }) {
           onScroll={onScroll}
           className="h-[58dvh] min-h-[390px] max-h-[680px] space-y-3 overflow-y-auto px-3 py-4 sm:px-4"
         >
+          {firebaseEnabled && hasOlder ? (
+            <div className="flex justify-center pb-1">
+              <button
+                type="button"
+                onClick={loadEarlierMessages}
+                disabled={loadingOlder}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.035] px-3 text-[10px] font-medium text-pink-100/65 transition hover:border-blush/20 hover:text-blush disabled:opacity-45"
+              >
+                <ChevronUp size={13} />
+                {loadingOlder ? 'Loading…' : 'Earlier messages'}
+              </button>
+            </div>
+          ) : null}
+
           {visibleMessages.map((message) => {
             const own = message.senderId === user.uid;
             const receipt = own ? readReceiptForMessage(message, user.uid) : '';
+            const reply = message.type === 'text' ? splitReplyText(message.text) : { quote: '', body: message.caption || '' };
+            const actionsOpen = actionsFor === message.id;
             return (
               <motion.article
                 key={`${message.id}-${message.clientNonce || ''}`}
@@ -594,6 +744,11 @@ export default function ChatPanel({ onMessageCountChange }) {
                       ? 'rounded-br-md border-blush/16 bg-[linear-gradient(145deg,rgba(244,174,190,.18),rgba(212,160,122,.09))] text-white'
                       : 'rounded-bl-md border-white/8 bg-white/[0.055] text-pink-50'
                   }`}>
+                    {reply.quote ? (
+                      <div className="mb-2 rounded-xl border-l-2 border-blush/45 bg-black/16 px-2.5 py-1.5 text-[11px] leading-4 text-pink-100/62">
+                        {reply.quote}
+                      </div>
+                    ) : null}
                     {message.type === 'image' && message.mediaUrl ? (
                       <img src={message.mediaUrl} alt="Shared" className="mb-2 max-h-72 w-full rounded-xl object-cover" />
                     ) : null}
@@ -601,7 +756,7 @@ export default function ChatPanel({ onMessageCountChange }) {
                       <audio controls preload="metadata" src={message.mediaUrl} className="mb-1 w-full max-w-[260px]" />
                     ) : null}
                     {message.type === 'text' ? (
-                      <p className="whitespace-pre-wrap break-words text-[14px] leading-5">{message.text}</p>
+                      <p className="whitespace-pre-wrap break-words text-[14px] leading-5">{reply.body}</p>
                     ) : message.caption ? (
                       <p className="break-words text-[13px] leading-5">{message.caption}</p>
                     ) : null}
@@ -623,15 +778,43 @@ export default function ChatPanel({ onMessageCountChange }) {
                     {!message.pending ? (
                       <button
                         type="button"
-                        onClick={() => handleReaction(message.id)}
+                        onClick={() => setActionsFor((current) => (current === message.id ? null : message.id))}
                         className="grid h-5 w-5 place-items-center rounded-full transition hover:bg-white/[0.06] hover:text-blush"
-                        aria-label="React with heart"
+                        aria-label="Message actions"
                       >
-                        <Heart size={11} />
+                        <MoreHorizontal size={12} />
                       </button>
                     ) : null}
                     {(message.reactions || []).includes('❤️') ? <span className="text-[11px]">❤️</span> : null}
                   </div>
+
+                  {actionsOpen ? (
+                    <div className={`mt-1.5 flex items-center gap-1 rounded-xl border border-white/8 bg-black/28 p-1 ${own ? 'self-end' : 'self-start'}`}>
+                      <button
+                        type="button"
+                        onClick={() => handleReaction(message.id)}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] text-pink-100/65 hover:bg-white/[0.05] hover:text-blush"
+                      >
+                        <Heart size={12} /> React
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startReply(message)}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] text-pink-100/65 hover:bg-white/[0.05] hover:text-blush"
+                      >
+                        <CornerUpLeft size={12} /> Reply
+                      </button>
+                      {own ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(message)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] text-red-200/70 hover:bg-red-500/10 hover:text-red-100"
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </motion.article>
             );
@@ -677,7 +860,10 @@ export default function ChatPanel({ onMessageCountChange }) {
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0] || null;
-                    if (file) setAttachment(file);
+                    if (file) {
+                      setAttachment(file);
+                      setReplyingTo(null);
+                    }
                     event.target.value = '';
                     setToolsOpen(false);
                   }}
@@ -711,6 +897,19 @@ export default function ChatPanel({ onMessageCountChange }) {
       </AnimatePresence>
 
       <div className="border-t border-white/8 bg-black/22 px-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom))] pt-2.5 sm:px-4 sm:pb-3">
+        {replyingTo ? (
+          <div className="mb-2 flex items-start gap-2 rounded-xl border border-blush/12 bg-blush/[0.055] px-3 py-2">
+            <CornerUpLeft size={13} className="mt-0.5 shrink-0 text-blush" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold text-blush">Replying</p>
+              <p className="truncate text-[11px] text-pink-100/58">{replyQuoteForMessage(replyingTo)}</p>
+            </div>
+            <button type="button" onClick={() => setReplyingTo(null)} className="grid h-7 w-7 shrink-0 place-items-center rounded-full hover:bg-white/[0.05]" aria-label="Cancel reply">
+              <X size={13} />
+            </button>
+          </div>
+        ) : null}
+
         {attachment ? (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-[11px] text-pink-100/65">
             <span className="truncate">{attachment.type.startsWith('audio/') ? '🎙 Voice note' : '🖼 Photo'} · {attachment.name}</span>
@@ -739,11 +938,12 @@ export default function ChatPanel({ onMessageCountChange }) {
 
           <div className="min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-white/[0.045] px-3 py-2 focus-within:border-blush/25">
             <textarea
+              data-chat-composer
               rows={1}
               value={draft}
               onChange={(event) => onDraftChange(event.target.value)}
               onKeyDown={onComposerKeyDown}
-              placeholder="Message…"
+              placeholder={replyingTo ? 'Write a reply…' : 'Message…'}
               maxLength={CHAT_LIMITS.maxMessageLength}
               className="max-h-28 min-h-[27px] w-full resize-none bg-transparent text-[14px] leading-5 text-white outline-none placeholder:text-pink-100/32"
             />
