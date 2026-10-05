@@ -3,18 +3,16 @@ import ChatPanel from '../components/ChatPanel.jsx';
 import CallDiagnosticsPanel from '../components/call/CallDiagnosticsPanel.jsx';
 import CallHistoryPanel from '../components/call/CallHistoryPanel.jsx';
 import CallLaunchButtons from '../components/call/CallLaunchButtons.jsx';
-import CallSetupCard from '../components/call/CallSetupCard.jsx';
 
 export default function UniverseChat() {
-  const { setMessageCount, resetVersion } = useOutletContext();
+  const { resetVersion } = useOutletContext();
 
   return (
-    <>
+    <div className="space-y-3">
       <CallLaunchButtons />
-      <CallSetupCard />
       <CallDiagnosticsPanel />
-      <ChatPanel key={`chat-${resetVersion}`} onMessageCountChange={setMessageCount} />
+      <ChatPanel key={`chat-${resetVersion}`} />
       <CallHistoryPanel />
-    </>
+    </div>
   );
 }
