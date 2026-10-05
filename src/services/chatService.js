@@ -1,7 +1,12 @@
 import {
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
+  endBefore,
+  getDocs,
+  limit,
+  limitToLast,
   onSnapshot,
   orderBy,
   query,
@@ -17,6 +22,8 @@ import { decryptMessage, encryptMessage } from './encryption';
 export const CHAT_LIMITS = {
   maxMessageLength: 2000,
   maxUploadBytes: 10 * 1024 * 1024,
+  liveMessages: 80,
+  historyPage: 50,
 };
 
 const TYPING_STALE_MS = 2600;
@@ -59,7 +66,7 @@ async function hydrateMessage(messageDoc, sharedSecret, decryptedCache) {
   const base = {
     id: messageDoc.id,
     ...data,
-    _pendingWrite: messageDoc.metadata.hasPendingWrites,
+    _pendingWrite: messageDoc.metadata?.hasPendingWrites || false,
     _clientCreatedAt: clientCreatedAt,
   };
 
@@ -90,7 +97,12 @@ export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages,
   let processing = Promise.resolve();
   let closed = false;
 
-  const q = query(pathFor(coupleId, 'messages'), orderBy('createdAt', 'asc'));
+  const q = query(
+    pathFor(coupleId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    limitToLast(CHAT_LIMITS.liveMessages),
+  );
+
   const unsubscribe = onSnapshot(
     q,
     { includeMetadataChanges: true },
@@ -127,6 +139,7 @@ export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages,
             fromCache: snapshot.metadata.fromCache,
             hasPendingWrites: snapshot.metadata.hasPendingWrites,
             receivedAt: Date.now(),
+            hasOlder: snapshot.size >= CHAT_LIMITS.liveMessages,
           });
         })
         .catch((error) => onError?.(error));
@@ -137,6 +150,34 @@ export function subscribeToEncryptedMessages(coupleId, sharedSecret, onMessages,
   return () => {
     closed = true;
     unsubscribe();
+  };
+}
+
+export async function loadOlderEncryptedMessages({
+  coupleId,
+  sharedSecret,
+  beforeCreatedAt,
+  pageSize = CHAT_LIMITS.historyPage,
+}) {
+  if (!firebaseEnabled || !coupleId || !beforeCreatedAt) {
+    return { messages: [], hasMore: false };
+  }
+
+  const q = query(
+    pathFor(coupleId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    endBefore(beforeCreatedAt),
+    limitToLast(pageSize),
+  );
+  const snapshot = await getDocs(q);
+  const decryptedCache = new Map();
+  const messages = await Promise.all(
+    snapshot.docs.map((entry) => hydrateMessage(entry, sharedSecret, decryptedCache)),
+  );
+
+  return {
+    messages,
+    hasMore: snapshot.size >= pageSize,
   };
 }
 
@@ -210,6 +251,11 @@ export async function sendMediaMessage({
     localSentAt.delete(clientNonce);
     throw error;
   }
+}
+
+export async function deleteChatMessage(coupleId, messageId) {
+  if (!firebaseEnabled || !coupleId || !messageId) return;
+  await deleteDoc(messageRefFor(coupleId, messageId));
 }
 
 function uploadTaskPromise(task, onProgress) {
