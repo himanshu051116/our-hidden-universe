@@ -10,11 +10,11 @@ export default function UniverseChat() {
 
   return (
     <>
-      <CallSetupCard />
       <CallLaunchButtons />
+      <CallSetupCard />
       <CallDiagnosticsPanel />
-      <CallHistoryPanel />
       <ChatPanel key={`chat-${resetVersion}`} onMessageCountChange={setMessageCount} />
+      <CallHistoryPanel />
     </>
   );
 }

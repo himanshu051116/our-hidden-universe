@@ -1,513 +1,765 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, CheckCheck, ImagePlus, Mic, Send } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCheck,
+  Heart,
+  ImagePlus,
+  Mic,
+  Plus,
+  Send,
+  Timer,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCall } from '../calls/CallContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  addReaction,
   CHAT_LIMITS,
-  markSeen,
+  addReaction,
+  markMessagesSeen,
   sendEncryptedMessage,
   sendMediaMessage,
   setTyping,
   subscribeToEncryptedMessages,
   subscribeToTypingState,
   uploadChatFile,
-} from '../services/chatService.js';
-import { firebaseEnabled } from '../services/firebase.js';
-import { formatTime, toDateValue } from '../utils/date.js';
+} from '../services/chatService';
+import { firebaseEnabled } from '../services/firebase';
+import { toDateValue } from '../utils/date';
 
-const demoKey = 'ohu-demo-messages-v1';
-const legacyDemoIds = new Set(['d1', 'd2']);
-const emojis = ['\u2764\uFE0F', '\u2728', '\uD83C\uDF19', '\uD83D\uDC8C', '\uD83E\uDD7A'];
-const maxUploadMb = Math.floor(CHAT_LIMITS.maxUploadBytes / (1024 * 1024));
+const demoStorageKey = 'ohu-demo-messages-v1';
+const emojis = ['❤️', '🥰', '😘', '🫶', '✨', '🌙'];
 
-function loadDemoMessages() {
+function buildDemoMessages() {
+  const base = Date.now();
+  return [
+    {
+      id: 'welcome-1',
+      senderId: 'partner',
+      text: 'You made it into our little universe ✨',
+      createdAt: new Date(base - 120000),
+      seenBy: ['partner', 'demo-lover'],
+      reactions: ['❤️'],
+      type: 'text',
+      clientNonce: 'welcome-1',
+    },
+    {
+      id: 'welcome-2',
+      senderId: 'demo-lover',
+      text: 'This already feels like home.',
+      createdAt: new Date(base - 60000),
+      seenBy: ['demo-lover'],
+      reactions: [],
+      type: 'text',
+      clientNonce: 'welcome-2',
+    },
+  ];
+}
+
+function readDemoMessages() {
+  const saved = localStorage.getItem(demoStorageKey);
+  if (!saved) {
+    const initial = buildDemoMessages();
+    localStorage.setItem(demoStorageKey, JSON.stringify(initial));
+    return initial;
+  }
   try {
-    const raw = localStorage.getItem(demoKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((entry) => !legacyDemoIds.has(entry.id)) : [];
+    return JSON.parse(saved);
   } catch {
-    return [];
+    return buildDemoMessages();
   }
 }
 
 function dataUrlFromFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result?.toString() || '');
-    reader.onerror = reject;
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
     reader.readAsDataURL(file);
   });
 }
 
-function compressedImageDataUrlFromFile(file) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
+async function prepareImageForUpload(file) {
+  if (!file?.type?.startsWith('image/')) return file;
+  if (file.type === 'image/gif' || file.size <= 700 * 1024) return file;
 
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      const maxSide = 1280;
-      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.width * scale));
-      canvas.height = Math.max(1, Math.round(image.height * scale));
-      const context = canvas.getContext('2d');
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.78));
-    };
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('Unable to prepare this image.'));
+      element.src = sourceUrl;
+    });
 
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Unable to prepare this image.'));
-    };
+    const longest = Math.max(image.naturalWidth || 1, image.naturalHeight || 1);
+    const scale = Math.min(1, 1440 / longest);
+    const width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
+    const height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0, width, height);
 
-    image.src = objectUrl;
-  });
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (value) => (value ? resolve(value) : reject(new Error('Unable to prepare this image.'))),
+        'image/jpeg',
+        0.82,
+      );
+    });
+
+    const baseName = String(file.name || 'image').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9-_]/g, '-') || 'image';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
 }
 
-function attachmentValidationError(file) {
-  if (!file) return '';
-  if (!file.type.startsWith('image/') && !file.type.startsWith('audio/')) {
-    return 'Only image and audio files are allowed.';
-  }
-  if (file.size > CHAT_LIMITS.maxUploadBytes) {
-    return `File too large. Max ${maxUploadMb}MB allowed.`;
-  }
-  return '';
+function expiryFromOption(option) {
+  if (option === '30s') return new Date(Date.now() + 30000).toISOString();
+  if (option === '5m') return new Date(Date.now() + 5 * 60000).toISOString();
+  if (option === '1h') return new Date(Date.now() + 60 * 60000).toISOString();
+  return null;
 }
 
-function readReceiptForMessage(message, currentUserId) {
-  const seenBy = message.seenBy || [];
-  const seenAtBy = message.seenAtBy || {};
-  const partnerSeenEntry = Object.entries(seenAtBy).find(([uid]) => uid !== currentUserId);
+function messageTimestamp(message) {
+  const value = message.createdAt || message._clientCreatedAt || message.optimisticAt;
+  return toDateValue(value).getTime();
+}
 
-  if (partnerSeenEntry && partnerSeenEntry[1]) {
-    return `Seen ${formatTime(partnerSeenEntry[1])}`;
-  }
-  if (seenBy.some((uid) => uid !== currentUserId)) {
-    return 'Seen';
-  }
-  return 'Delivered';
+function isExpired(message, now) {
+  return Boolean(message.selfDestructAt) && new Date(message.selfDestructAt).getTime() <= now;
+}
+
+function readReceiptForMessage(message, userId) {
+  if (message.pending || message._pendingWrite) return 'Sending…';
+  const partnerSeen = (message.seenBy || []).some((id) => id !== userId);
+  return partnerSeen ? 'Seen' : 'Delivered';
 }
 
 export default function ChatPanel({ onMessageCountChange }) {
   const { user, coupleId, sharedSecret } = useAuth();
-  const [messages, setMessages] = useState(() => loadDemoMessages());
+  const { partner } = useCall();
+  const [messages, setMessages] = useState(() => (firebaseEnabled ? [] : readDemoMessages()));
   const [pendingMessages, setPendingMessages] = useState([]);
   const [typingMap, setTypingMap] = useState({});
   const [draft, setDraft] = useState('');
-  const [selfDestruct, setSelfDestruct] = useState('none');
+  const [selfDestruct, setSelfDestruct] = useState('keep');
   const [attachment, setAttachment] = useState(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [notice, setNotice] = useState('');
-  const [sending, setSending] = useState(false);
-  const typingTimerRef = useRef(null);
-  const typingStateRef = useRef(false);
-  const noticeTimerRef = useRef(null);
-  const endRef = useRef(null);
+  const [syncMeta, setSyncMeta] = useState({ fromCache: false, hasPendingWrites: false, receivedAt: 0 });
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [hasNewMessage, setHasNewMessage] = useState(false);
+  const [clock, setClock] = useState(Date.now());
+
+  const typingTimer = useRef(null);
+  const lastTypingPulseRef = useRef(0);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const scrollRef = useRef(null);
+  const nearBottomRef = useRef(true);
+  const initialScrollRef = useRef(false);
+  const previousCountRef = useRef(0);
+  const seenTimerRef = useRef(null);
+  const seenInFlightRef = useRef(new Set());
+  const previewUrlsRef = useRef(new Map());
+  const draftRef = useRef('');
+
+  const partnerName = partner?.displayName || partner?.email || 'Your partner';
+  const partnerInitial = String(partnerName).trim().charAt(0).toUpperCase() || 'P';
+
+  function cleanupPreview(clientNonce) {
+    const url = previewUrlsRef.current.get(clientNonce);
+    if (url) URL.revokeObjectURL(url);
+    previewUrlsRef.current.delete(clientNonce);
+  }
 
   const visibleMessages = useMemo(() => {
     const confirmedNonces = new Set(messages.map((message) => message.clientNonce).filter(Boolean));
     return [...messages, ...pendingMessages.filter((message) => !confirmedNonces.has(message.clientNonce))]
-      .filter((message) => !message.selfDestructAt || new Date(message.selfDestructAt).getTime() > Date.now())
-      .sort((a, b) => toDateValue(a.createdAt).getTime() - toDateValue(b.createdAt).getTime());
-  }, [messages, pendingMessages]);
-
-  const partnerTyping = Object.entries(typingMap).some(([uid, isTyping]) => uid !== user?.uid && isTyping);
+      .filter((message) => !isExpired(message, clock))
+      .sort((a, b) => messageTimestamp(a) - messageTimestamp(b));
+  }, [messages, pendingMessages, clock]);
 
   useEffect(() => {
-    if (!firebaseEnabled || !coupleId) return undefined;
+    const timer = window.setInterval(() => setClock(Date.now()), 10000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-    const unsubscribeMessages = subscribeToEncryptedMessages(
+  useEffect(() => {
+    if (!firebaseEnabled) return undefined;
+    return subscribeToEncryptedMessages(
       coupleId,
       sharedSecret,
-      (nextMessages) => {
+      (nextMessages, metadata) => {
+        const confirmedNonces = new Set(nextMessages.map((message) => message.clientNonce).filter(Boolean));
         setMessages(nextMessages);
-        setPendingMessages((previous) =>
-          previous.filter((pending) => !nextMessages.some((message) => message.clientNonce === pending.clientNonce)),
-        );
+        setSyncMeta(metadata || { fromCache: false, hasPendingWrites: false, receivedAt: Date.now() });
+        setPendingMessages((current) => current.filter((pending) => {
+          if (!confirmedNonces.has(pending.clientNonce)) return true;
+          cleanupPreview(pending.clientNonce);
+          return false;
+        }));
+        setNotice('');
       },
-      () => {
-        showNotice('Chat sync is blocked. Check that both partners joined the same couple code and Firestore rules are deployed.');
-      },
+      () => setNotice('Couldn’t sync with your partner. Check your connection and try again.'),
     );
-    const unsubscribeTyping = subscribeToTypingState(coupleId, setTypingMap);
-
-    return () => {
-      unsubscribeMessages?.();
-      unsubscribeTyping?.();
-    };
   }, [coupleId, sharedSecret]);
 
   useEffect(() => {
-    if (firebaseEnabled) return;
-    localStorage.setItem(demoKey, JSON.stringify(messages));
-  }, [messages]);
+    if (!firebaseEnabled) return undefined;
+    return subscribeToTypingState(coupleId, setTypingMap);
+  }, [coupleId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [visibleMessages.length, partnerTyping]);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     onMessageCountChange?.(visibleMessages.length);
-  }, [onMessageCountChange, visibleMessages.length]);
+  }, [visibleMessages.length, onMessageCountChange]);
 
   useEffect(() => {
-    if (!firebaseEnabled || !coupleId || !user?.uid) return;
-    visibleMessages.forEach((message) => {
-      if (message.senderId !== user.uid) {
-        markSeen(coupleId, message.id, user.uid, message.seenBy || [], message.seenAtBy || {});
-      }
-    });
-  }, [visibleMessages, user?.uid, coupleId]);
+    if (!firebaseEnabled || !user?.uid || document.visibilityState !== 'visible') return undefined;
+
+    window.clearTimeout(seenTimerRef.current);
+    const unseen = messages.filter((message) =>
+      message.senderId !== user.uid
+      && !(message.seenBy || []).includes(user.uid)
+      && !seenInFlightRef.current.has(message.id),
+    );
+    if (!unseen.length) return undefined;
+
+    unseen.forEach((message) => seenInFlightRef.current.add(message.id));
+    seenTimerRef.current = window.setTimeout(() => {
+      markMessagesSeen(coupleId, unseen, user.uid)
+        .catch(() => {})
+        .finally(() => unseen.forEach((message) => seenInFlightRef.current.delete(message.id)));
+    }, 120);
+
+    return () => window.clearTimeout(seenTimerRef.current);
+  }, [messages, coupleId, user?.uid]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const latest = visibleMessages[visibleMessages.length - 1];
+    const grew = visibleMessages.length > previousCountRef.current;
+    previousCountRef.current = visibleMessages.length;
+
+    if (!initialScrollRef.current) {
+      initialScrollRef.current = true;
+      requestAnimationFrame(() => container.scrollTo({ top: container.scrollHeight }));
+      return;
+    }
+
+    if (!grew) return;
+    const shouldFollow = nearBottomRef.current || latest?.senderId === user?.uid || latest?.pending;
+    if (shouldFollow) {
+      setHasNewMessage(false);
+      requestAnimationFrame(() => container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' }));
+    } else if (latest?.senderId !== user?.uid) {
+      setHasNewMessage(true);
+    }
+  }, [visibleMessages.length, user?.uid]);
+
+  useEffect(() => {
+    if (!partner || !typingMap[partner.id] || !nearBottomRef.current) return;
+    const container = scrollRef.current;
+    requestAnimationFrame(() => container?.scrollTo({ top: container.scrollHeight, behavior: 'smooth' }));
+  }, [typingMap, partner]);
 
   useEffect(
     () => () => {
-      clearTimeout(noticeTimerRef.current);
-    },
-    [],
-  );
-
-  useEffect(
-    () => () => {
-      clearTimeout(typingTimerRef.current);
-      if (firebaseEnabled && coupleId && user?.uid && typingStateRef.current) {
-        setTyping(coupleId, user.uid, false);
-      }
+      window.clearTimeout(typingTimer.current);
+      if (firebaseEnabled && user?.uid) setTyping(coupleId, user.uid, false).catch(() => {});
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
     },
     [coupleId, user?.uid],
   );
 
-  function showNotice(text) {
-    setNotice(text);
-    clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = setTimeout(() => setNotice(''), 3600);
+  const partnerTyping = partner ? Boolean(typingMap[partner.id]) : false;
+  const pendingWork = pendingMessages.length > 0 || syncMeta.hasPendingWrites;
+  const syncLabel = partnerTyping
+    ? `${partnerName} is typing…`
+    : !firebaseEnabled
+      ? 'Private preview on this device'
+      : !online
+        ? 'Offline · messages will retry'
+        : pendingWork
+          ? 'Sending…'
+          : syncMeta.fromCache
+            ? 'Reconnecting…'
+            : 'Synced';
+  const syncTone = !online
+    ? 'bg-red-300'
+    : partnerTyping
+      ? 'bg-blush'
+      : pendingWork || syncMeta.fromCache
+        ? 'bg-amber-300'
+        : 'bg-emerald-300';
+
+  function pulseTyping() {
+    if (!firebaseEnabled || !user?.uid) return;
+    const now = Date.now();
+    if (now - lastTypingPulseRef.current > 850) {
+      lastTypingPulseRef.current = now;
+      setTyping(coupleId, user.uid, true).catch(() => {});
+    }
+    window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(() => {
+      lastTypingPulseRef.current = 0;
+      setTyping(coupleId, user.uid, false).catch(() => {});
+    }, 1050);
   }
 
-  async function handleSend() {
-    if (sending) return;
-    const cleanDraft = draft.trim();
-    if (!cleanDraft && !attachment) return;
-    if (cleanDraft.length > CHAT_LIMITS.maxMessageLength) {
-      showNotice(`Message too long. Max ${CHAT_LIMITS.maxMessageLength} characters.`);
-      return;
-    }
-
-    const attachmentError = attachmentValidationError(attachment);
-    if (attachmentError) {
-      showNotice(attachmentError);
-      return;
-    }
-
-    setSending(true);
-    const selfDestructAt =
-      selfDestruct === 'none'
-        ? null
-        : new Date(Date.now() + Number(selfDestruct) * 1000).toISOString();
-    const clientNonce = crypto.randomUUID();
-
-    try {
-      if (firebaseEnabled) {
-        if (cleanDraft && !attachment) {
-          setPendingMessages((previous) => [
-            ...previous,
-            {
-              id: `pending-${clientNonce}`,
-              clientNonce,
-              text: cleanDraft,
-              senderId: user.uid,
-              createdAt: new Date().toISOString(),
-              seenBy: [user.uid],
-              seenAtBy: { [user.uid]: new Date().toISOString() },
-              reactions: [],
-              type: 'text',
-              selfDestructAt,
-              pending: true,
-            },
-          ]);
-          setDraft('');
-          setSelfDestruct('none');
-          await sendEncryptedMessage({
-            coupleId,
-            sharedSecret,
-            senderId: user.uid,
-            text: cleanDraft,
-            selfDestructAt,
-            clientNonce,
-          });
-        }
-        if (attachment) {
-          const mediaUrl = attachment.type.startsWith('image/')
-            ? await compressedImageDataUrlFromFile(attachment)
-            : await uploadChatFile(coupleId, user.uid, attachment);
-          if (mediaUrl) {
-            const mediaType = attachment.type.startsWith('audio') ? 'voice' : 'image';
-            await sendMediaMessage({
-              coupleId,
-              senderId: user.uid,
-              mediaUrl,
-              mediaType,
-              caption: cleanDraft,
-            });
-          }
-        }
-      } else {
-        const localMessages = [];
-        if (cleanDraft) {
-          localMessages.push({
-            id: crypto.randomUUID(),
-            text: cleanDraft,
-            senderId: user.uid,
-            createdAt: new Date().toISOString(),
-            seenBy: [user.uid],
-            seenAtBy: { [user.uid]: new Date().toISOString() },
-            reactions: [],
-            type: 'text',
-            selfDestructAt,
-          });
-        }
-
-        if (attachment) {
-          const mediaUrl = await dataUrlFromFile(attachment);
-          localMessages.push({
-            id: crypto.randomUUID(),
-            senderId: user.uid,
-            createdAt: new Date().toISOString(),
-            seenBy: [user.uid],
-            seenAtBy: { [user.uid]: new Date().toISOString() },
-            reactions: [],
-            type: attachment.type.startsWith('audio') ? 'voice' : 'image',
-            mediaUrl,
-            caption: cleanDraft,
-          });
-        }
-
-        setMessages((previous) => [...previous, ...localMessages]);
-      }
-
-      if (!firebaseEnabled || attachment) setDraft('');
-      setSelfDestruct('none');
-      setAttachment(null);
-      if (firebaseEnabled && typingStateRef.current) {
-        typingStateRef.current = false;
-        setTyping(coupleId, user.uid, false);
-      }
-    } catch (error) {
-      setPendingMessages((previous) => previous.filter((message) => message.clientNonce !== clientNonce));
-      if (firebaseEnabled && cleanDraft && !attachment) setDraft(cleanDraft);
-      showNotice(error.message || 'Unable to send message right now.');
-    } finally {
-      setSending(false);
-    }
+  function stopTyping() {
+    window.clearTimeout(typingTimer.current);
+    lastTypingPulseRef.current = 0;
+    if (firebaseEnabled && user?.uid) setTyping(coupleId, user.uid, false).catch(() => {});
   }
 
   function onDraftChange(value) {
     setDraft(value);
-    if (!firebaseEnabled || !coupleId || !user?.uid) return;
-    if (!typingStateRef.current) {
-      typingStateRef.current = true;
-      setTyping(coupleId, user.uid, true);
-    }
-    clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => {
-      typingStateRef.current = false;
-      setTyping(coupleId, user.uid, false);
-    }, 1200);
+    draftRef.current = value;
+    pulseTyping();
   }
 
-  function onSelectAttachment(file) {
-    const error = attachmentValidationError(file);
-    if (error) {
-      setAttachment(null);
-      showNotice(error);
-      return;
-    }
-    setAttachment(file);
+  function persistLocal(nextMessages) {
+    setMessages(nextMessages);
+    localStorage.setItem(demoStorageKey, JSON.stringify(nextMessages));
   }
 
-  async function onReact(messageId) {
-    if (firebaseEnabled) {
-      await addReaction(coupleId, messageId, 'Miss You \u2764\uFE0F');
+  async function sendLocalMessage({ text, file }) {
+    let mediaUrl = '';
+    let type = 'text';
+    if (file) {
+      mediaUrl = await dataUrlFromFile(file);
+      type = file.type.startsWith('audio/') ? 'voice' : 'image';
+    }
+
+    const nextMessage = {
+      id: crypto.randomUUID(),
+      clientNonce: crypto.randomUUID(),
+      senderId: user.uid,
+      text: type === 'text' ? text : '',
+      caption: type === 'text' ? '' : text,
+      mediaUrl,
+      type,
+      createdAt: new Date().toISOString(),
+      seenBy: [user.uid],
+      reactions: [],
+      selfDestructAt: type === 'text' ? expiryFromOption(selfDestruct) : null,
+    };
+    persistLocal([...messages, nextMessage]);
+  }
+
+  async function sendCurrentMessage() {
+    const cleanDraft = draft.trim();
+    const currentAttachment = attachment;
+    if (!cleanDraft && !currentAttachment) return;
+    if (cleanDraft.length > CHAT_LIMITS.maxMessageLength) {
+      setNotice(`Messages can be up to ${CHAT_LIMITS.maxMessageLength} characters.`);
       return;
     }
-    setMessages((previous) =>
-      previous.map((message) =>
-        message.id === messageId
-          ? { ...message, reactions: [...(message.reactions || []), 'Miss You \u2764\uFE0F'] }
+
+    setNotice('');
+    stopTyping();
+    setDraft('');
+    draftRef.current = '';
+    setAttachment(null);
+    setToolsOpen(false);
+
+    if (!firebaseEnabled) {
+      try {
+        await sendLocalMessage({ text: cleanDraft, file: currentAttachment });
+        setSelfDestruct('keep');
+      } catch {
+        setNotice('Unable to send that message.');
+      }
+      return;
+    }
+
+    const clientNonce = crypto.randomUUID();
+    const optimisticAt = Date.now();
+
+    if (!currentAttachment) {
+      const optimistic = {
+        id: `pending-${clientNonce}`,
+        clientNonce,
+        senderId: user.uid,
+        text: cleanDraft,
+        type: 'text',
+        optimisticAt,
+        pending: true,
+        seenBy: [user.uid],
+        reactions: [],
+        selfDestructAt: expiryFromOption(selfDestruct),
+      };
+      setPendingMessages((current) => [...current, optimistic]);
+      setSelfDestruct('keep');
+
+      sendEncryptedMessage({
+        coupleId,
+        sharedSecret,
+        senderId: user.uid,
+        text: cleanDraft,
+        selfDestructAt: optimistic.selfDestructAt,
+        clientNonce,
+      }).catch(() => {
+        setPendingMessages((current) => current.filter((item) => item.clientNonce !== clientNonce));
+        setDraft((current) => {
+          if (current) return current;
+          draftRef.current = cleanDraft;
+          return cleanDraft;
+        });
+        setNotice('Message didn’t send. Your text was restored so you can retry.');
+      });
+      return;
+    }
+
+    const mediaType = currentAttachment.type.startsWith('audio/') ? 'voice' : 'image';
+    const previewUrl = URL.createObjectURL(currentAttachment);
+    previewUrlsRef.current.set(clientNonce, previewUrl);
+    setPendingMessages((current) => [
+      ...current,
+      {
+        id: `pending-${clientNonce}`,
+        clientNonce,
+        senderId: user.uid,
+        caption: cleanDraft,
+        mediaUrl: previewUrl,
+        type: mediaType,
+        optimisticAt,
+        pending: true,
+        uploadProgress: 0,
+        seenBy: [user.uid],
+        reactions: [],
+      },
+    ]);
+
+    (async () => {
+      try {
+        const fileToUpload = mediaType === 'image'
+          ? await prepareImageForUpload(currentAttachment)
+          : currentAttachment;
+        const mediaUrl = await uploadChatFile(coupleId, user.uid, fileToUpload, {
+          clientNonce,
+          onProgress: (uploadProgress) => {
+            setPendingMessages((current) => current.map((item) =>
+              item.clientNonce === clientNonce ? { ...item, uploadProgress } : item,
+            ));
+          },
+        });
+        await sendMediaMessage({
+          coupleId,
+          senderId: user.uid,
+          mediaUrl,
+          mediaType,
+          caption: cleanDraft,
+          clientNonce,
+        });
+      } catch {
+        setPendingMessages((current) => current.filter((item) => item.clientNonce !== clientNonce));
+        cleanupPreview(clientNonce);
+        setAttachment((current) => current || currentAttachment);
+        setNotice('Attachment didn’t send. It is ready for you to retry.');
+      }
+    })();
+  }
+
+  async function handleReaction(messageId) {
+    if (String(messageId).startsWith('pending-')) return;
+    if (!firebaseEnabled) {
+      persistLocal(messages.map((message) =>
+        message.id === messageId && !(message.reactions || []).includes('❤️')
+          ? { ...message, reactions: [...(message.reactions || []), '❤️'] }
           : message,
-      ),
-    );
+      ));
+      return;
+    }
+    await addReaction(coupleId, messageId, '❤️').catch(() => {});
+  }
+
+  function onScroll() {
+    const container = scrollRef.current;
+    if (!container) return;
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    nearBottomRef.current = distance < 110;
+    if (nearBottomRef.current) setHasNewMessage(false);
+  }
+
+  function jumpToLatest() {
+    const container = scrollRef.current;
+    nearBottomRef.current = true;
+    setHasNewMessage(false);
+    container?.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  }
+
+  function addEmoji(emoji) {
+    const next = `${draft}${emoji}`;
+    setDraft(next);
+    draftRef.current = next;
+    pulseTyping();
+  }
+
+  async function toggleRecording() {
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.stop();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setNotice('Voice recording is not supported on this device.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
+        setAttachment(file);
+        recorder.stream.getTracks().forEach((track) => track.stop());
+        recorderRef.current = null;
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setToolsOpen(false);
+      setNotice('Recording voice note… tap the microphone again to stop.');
+    } catch {
+      setNotice('Microphone access is needed to record a voice note.');
+    }
+  }
+
+  function onComposerKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendCurrentMessage();
+    }
   }
 
   return (
-    <section id="chat" className="glass overflow-hidden rounded-2xl sm:rounded-3xl">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-black/30 px-4 py-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blush to-roseGold font-display text-xl text-midnight">
-            U
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-white">Our Hidden Universe</h2>
-            <p className="truncate text-xs text-pink-100/65">{partnerTyping ? 'Partner is typing...' : firebaseEnabled ? 'Private synced chat' : 'Local demo chat'}</p>
-          </div>
+    <section className="overflow-hidden rounded-[1.8rem] border border-white/10 bg-[linear-gradient(155deg,rgba(255,255,255,.05),rgba(255,255,255,.015))] shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+      <header className="flex items-center gap-3 border-b border-white/8 bg-black/22 px-3.5 py-3 sm:px-4">
+        <div className="relative grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blush/10 font-display text-xl text-blush ring-1 ring-blush/15">
+          {partnerInitial}
+          <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#100b13] ${syncTone}`} />
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-pink-100/75">
-          <CheckCheck size={13} />
-          Live
-        </span>
-      </div>
-
-      {(notice || !firebaseEnabled) ? (
-        <div className="mx-4 mt-3 inline-flex items-center gap-2 rounded-xl border border-roseGold/35 bg-roseGold/12 px-3 py-2 text-xs text-roseGold sm:mx-5">
-          <AlertTriangle size={13} />
-          {notice || 'Local demo mode is active. Use Firebase env vars for two-phone syncing.'}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[15px] font-semibold text-white">{partner ? partnerName : 'Private chat'}</h2>
+          <p className={`mt-0.5 truncate text-[11px] ${partnerTyping ? 'text-blush' : 'text-pink-100/52'}`}>{syncLabel}</p>
         </div>
-      ) : null}
+        {!online ? (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-500/10 text-red-200" title="Offline">
+            <WifiOff size={15} />
+          </span>
+        ) : null}
+      </header>
 
-      <div className="h-[calc(100vh-18rem)] min-h-[420px] overflow-y-auto bg-[#090611] p-3 sm:h-[560px] sm:p-5">
-        <div className="space-y-2">
-          {!visibleMessages.length ? (
-            <div className="mx-auto mt-16 max-w-xs rounded-2xl border border-white/10 bg-black/35 px-4 py-5 text-center text-sm text-pink-100/70">
-              Start with a small message. It will appear here instantly.
-            </div>
-          ) : null}
-
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="h-[58dvh] min-h-[390px] max-h-[680px] space-y-3 overflow-y-auto px-3 py-4 sm:px-4"
+        >
           {visibleMessages.map((message) => {
-            const own = message.senderId === user?.uid;
-            const createdAt = toDateValue(message.createdAt);
+            const own = message.senderId === user.uid;
+            const receipt = own ? readReceiptForMessage(message, user.uid) : '';
             return (
-              <div key={message.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[86%] rounded-2xl px-3.5 py-2.5 text-sm shadow-lg sm:max-w-[70%] ${own ? 'rounded-br-md bg-[#245c4f] text-white' : 'rounded-bl-md bg-[#1c1726] text-pink-100'}`}>
-                  {message.type === 'image' && message.mediaUrl ? (
-                    <img src={message.mediaUrl} alt="shared memory" className="mb-2 max-h-56 w-full rounded-xl object-cover" />
-                  ) : null}
-
-                  {message.type === 'voice' && message.mediaUrl ? (
-                    <audio controls className="mb-2 w-full">
-                      <source src={message.mediaUrl} />
-                    </audio>
-                  ) : null}
-
-                  {message.text ? <p className="whitespace-pre-wrap break-words leading-5">{message.text}</p> : null}
-                  {message.caption ? <p className="mt-1 whitespace-pre-wrap break-words text-xs text-pink-100/80">{message.caption}</p> : null}
-                  {message.reactions?.length ? <p className="mt-1 text-xs text-blush/90">{message.reactions.join(' ')}</p> : null}
-
-                  {message.selfDestructAt ? (
-                    <p className="mt-1 text-[11px] text-roseGold/90">Disappears at {formatTime(message.selfDestructAt)}</p>
-                  ) : null}
-
-                  <div className="mt-1 flex items-center justify-end gap-2 text-[10px] text-pink-100/60">
-                    <span>{formatTime(createdAt)}</span>
-                    {own ? (
-                      <span className="inline-flex items-center gap-1 text-pink-100/75">
-                        <CheckCheck size={12} />
-                        {message.pending ? 'Sending' : readReceiptForMessage(message, user?.uid)}
-                      </span>
+              <motion.article
+                key={`${message.id}-${message.clientNonce || ''}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`flex ${own ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[84%] sm:max-w-[74%] ${own ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className={`rounded-[1.35rem] border px-3.5 py-2.5 shadow-[0_8px_22px_rgba(0,0,0,.12)] ${
+                    own
+                      ? 'rounded-br-md border-blush/16 bg-[linear-gradient(145deg,rgba(244,174,190,.18),rgba(212,160,122,.09))] text-white'
+                      : 'rounded-bl-md border-white/8 bg-white/[0.055] text-pink-50'
+                  }`}>
+                    {message.type === 'image' && message.mediaUrl ? (
+                      <img src={message.mediaUrl} alt="Shared" className="mb-2 max-h-72 w-full rounded-xl object-cover" />
+                    ) : null}
+                    {message.type === 'voice' && message.mediaUrl ? (
+                      <audio controls preload="metadata" src={message.mediaUrl} className="mb-1 w-full max-w-[260px]" />
+                    ) : null}
+                    {message.type === 'text' ? (
+                      <p className="whitespace-pre-wrap break-words text-[14px] leading-5">{message.text}</p>
+                    ) : message.caption ? (
+                      <p className="break-words text-[13px] leading-5">{message.caption}</p>
+                    ) : null}
+                    {message.pending && message.type !== 'text' ? (
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-blush transition-all" style={{ width: `${Math.max(6, message.uploadProgress || 0)}%` }} />
+                      </div>
                     ) : null}
                   </div>
 
-                  {!message.pending ? (
-                    <button
-                      type="button"
-                      onClick={() => onReact(message.id)}
-                      className="mt-1 rounded-full px-2 py-1 text-[11px] text-blush transition hover:bg-white/10"
-                    >
-                      Miss You {'\u2764\uFE0F'}
-                    </button>
-                  ) : null}
+                  <div className={`mt-1 flex items-center gap-1.5 px-1 text-[9px] text-pink-100/42 ${own ? 'justify-end' : 'justify-start'}`}>
+                    <span>{toDateValue(message.createdAt || message._clientCreatedAt || message.optimisticAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    {own ? (
+                      <span className={`inline-flex items-center gap-0.5 ${receipt === 'Seen' ? 'text-blush' : ''}`}>
+                        <CheckCheck size={11} />
+                        {message.pending && message.type !== 'text' ? `${message.uploadProgress || 0}%` : receipt}
+                      </span>
+                    ) : null}
+                    {!message.pending ? (
+                      <button
+                        type="button"
+                        onClick={() => handleReaction(message.id)}
+                        className="grid h-5 w-5 place-items-center rounded-full transition hover:bg-white/[0.06] hover:text-blush"
+                        aria-label="React with heart"
+                      >
+                        <Heart size={11} />
+                      </button>
+                    ) : null}
+                    {(message.reactions || []).includes('❤️') ? <span className="text-[11px]">❤️</span> : null}
+                  </div>
                 </div>
-              </div>
+              </motion.article>
             );
           })}
 
-          <AnimatePresence>
-            {partnerTyping && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 6 }}
-                className="inline-flex w-fit items-center gap-2 rounded-2xl rounded-bl-md bg-[#1c1726] px-3 py-2 text-xs text-blush"
-              >
-                <span>typing</span>
-                <span className="flex gap-1">
-                  {[0, 1, 2].map((dot) => (
-                    <motion.span
-                      key={dot}
-                      className="h-1.5 w-1.5 rounded-full bg-blush"
-                      animate={{ opacity: [0.3, 1, 0.3], y: [0, -2, 0] }}
-                      transition={{ duration: 0.9, repeat: Infinity, delay: dot * 0.14 }}
-                    />
-                  ))}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div ref={endRef} />
+          {partnerTyping ? (
+            <div className="flex justify-start">
+              <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-md border border-white/8 bg-white/[0.05] px-3 py-2">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blush" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blush [animation-delay:120ms]" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blush [animation-delay:240ms]" />
+              </div>
+            </div>
+          ) : null}
         </div>
+
+        {hasNewMessage ? (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-blush/20 bg-midnight/95 px-3.5 py-2 text-[11px] font-medium text-blush shadow-xl backdrop-blur-xl"
+          >
+            New message ↓
+          </button>
+        ) : null}
       </div>
 
-      <div className="border-t border-white/10 bg-black/35 p-3 sm:p-4">
-        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
-          {emojis.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm transition hover:bg-white/20"
-              onClick={() => onDraftChange(draft + emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
-          <select
-            value={selfDestruct}
-            onChange={(event) => setSelfDestruct(event.target.value)}
-            className="ml-auto h-9 shrink-0 rounded-full border border-white/10 bg-black/35 px-3 text-xs text-pink-100 outline-none"
+      <AnimatePresence initial={false}>
+        {toolsOpen ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden border-t border-white/8 bg-black/18"
           >
-            <option value="none">Keep</option>
-            <option value="30">30s</option>
-            <option value="300">5m</option>
-            <option value="3600">1h</option>
-          </select>
-        </div>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
+              <label className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] text-pink-100/75">
+                <ImagePlus size={13} />
+                Photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    if (file) setAttachment(file);
+                    event.target.value = '';
+                    setToolsOpen(false);
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={toggleRecording}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] text-pink-100/75"
+              >
+                <Mic size={13} />
+                Voice
+              </button>
+              {emojis.map((emoji) => (
+                <button key={emoji} type="button" onClick={() => addEmoji(emoji)} className="grid h-9 w-9 place-items-center rounded-full bg-white/[0.04] text-base">
+                  {emoji}
+                </button>
+              ))}
+              <label className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[10px] text-pink-100/60">
+                <Timer size={12} />
+                <select value={selfDestruct} onChange={(event) => setSelfDestruct(event.target.value)} className="bg-transparent text-pink-100 outline-none">
+                  <option className="bg-midnight" value="keep">Keep</option>
+                  <option className="bg-midnight" value="30s">30 sec</option>
+                  <option className="bg-midnight" value="5m">5 min</option>
+                  <option className="bg-midnight" value="1h">1 hour</option>
+                </select>
+              </label>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
-        {attachment ? <p className="mb-2 truncate text-xs text-blush/90">{attachment.name}</p> : null}
+      <div className="border-t border-white/8 bg-black/22 px-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom))] pt-2.5 sm:px-4 sm:pb-3">
+        {attachment ? (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-[11px] text-pink-100/65">
+            <span className="truncate">{attachment.type.startsWith('audio/') ? '🎙 Voice note' : '🖼 Photo'} · {attachment.name}</span>
+            <button type="button" onClick={() => setAttachment(null)} className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.06]" aria-label="Remove attachment">
+              <X size={13} />
+            </button>
+          </div>
+        ) : null}
+
+        {notice ? (
+          <div className="mb-2 flex items-start gap-2 rounded-xl bg-amber-300/8 px-3 py-2 text-[11px] leading-4 text-amber-100/80">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <span>{notice}</span>
+          </div>
+        ) : null}
 
         <div className="flex items-end gap-2">
-          <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full bg-white/10 text-pink-100 transition hover:bg-white/20" aria-label="Attach image">
-            <ImagePlus size={18} />
-            <input type="file" accept="image/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
-          </label>
+          <button
+            type="button"
+            onClick={() => setToolsOpen((value) => !value)}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition active:scale-95 ${toolsOpen ? 'border-blush/25 bg-blush/10 text-blush' : 'border-white/10 bg-white/[0.04] text-pink-100/70'}`}
+            aria-label="Message tools"
+          >
+            <Plus size={19} className={toolsOpen ? 'rotate-45 transition' : 'transition'} />
+          </button>
 
-          <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full bg-white/10 text-pink-100 transition hover:bg-white/20" aria-label="Attach voice">
-            <Mic size={18} />
-            <input type="file" accept="audio/*" className="hidden" onChange={(event) => onSelectAttachment(event.target.files?.[0] || null)} />
-          </label>
-
-          <textarea
-            value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-                event.preventDefault();
-                handleSend();
-              }
-            }}
-            rows={1}
-            placeholder="Message"
-            className="max-h-28 min-h-11 flex-1 resize-none rounded-3xl border border-white/10 bg-black/45 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
-          />
+          <div className="min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-white/[0.045] px-3 py-2 focus-within:border-blush/25">
+            <textarea
+              rows={1}
+              value={draft}
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={onComposerKeyDown}
+              placeholder="Message…"
+              maxLength={CHAT_LIMITS.maxMessageLength}
+              className="max-h-28 min-h-[27px] w-full resize-none bg-transparent text-[14px] leading-5 text-white outline-none placeholder:text-pink-100/32"
+            />
+            {draft.length > 1600 ? <p className="mt-1 text-right text-[9px] text-pink-100/35">{draft.length}/{CHAT_LIMITS.maxMessageLength}</p> : null}
+          </div>
 
           <button
             type="button"
-            onClick={handleSend}
-            disabled={sending}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-r from-blush to-roseGold text-midnight transition hover:brightness-105 disabled:opacity-60"
-            aria-label={sending ? 'Sending message' : 'Send message'}
+            onClick={sendCurrentMessage}
+            disabled={!draft.trim() && !attachment}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-r from-blush to-roseGold text-midnight shadow-[0_8px_24px_rgba(244,174,190,.13)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+            aria-label="Send message"
           >
-            <Send size={18} />
+            <Send size={17} />
           </button>
         </div>
-        <p className="mt-2 text-right text-[10px] text-pink-100/50">{draft.trim().length}/{CHAT_LIMITS.maxMessageLength}</p>
       </div>
     </section>
   );
