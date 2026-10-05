@@ -17,7 +17,7 @@ export default function Universe() {
 
   async function onResetData() {
     const confirmed = window.confirm(
-      'Clear shared data for this universe? This removes chat records, shared memories, letters and other saved entries for both partners.',
+      'Clear saved OHS data for this universe? This permanently removes shared chat, memories, letters, activities and uploaded files for both partners, plus OHS data saved on this device. Your accounts and universe membership stay connected.',
     );
     if (!confirmed || resetBusy) return;
 
@@ -27,12 +27,12 @@ export default function Universe() {
       const result = await resetCoupleData(coupleId);
       setResetVersion((value) => value + 1);
       if (result.mode === 'firebase') {
-        setResetStatus(`Shared data cleared: ${result.deletedDocs} records and ${result.deletedFiles} files removed.`);
+        setResetStatus(`Saved OHS data cleared: ${result.deletedDocs} shared records and ${result.deletedFiles} uploaded files removed.`);
       } else {
-        setResetStatus('Local preview data cleared.');
+        setResetStatus('OHS data saved on this device was cleared.');
       }
     } catch {
-      setResetStatus('Unable to clear data. Please try again.');
+      setResetStatus('Some saved data could not be cleared. Please try again.');
     } finally {
       setResetBusy(false);
     }
