@@ -108,6 +108,8 @@ export default function Login() {
               type="text"
               required={mode !== 'signup'}
               autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
               value={form.accessCode}
               onChange={(event) => setForm((previous) => ({ ...previous, accessCode: event.target.value }))}
               className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
