@@ -1,8 +1,17 @@
-import { BookOpen, CalendarClock, CheckCircle2, ListTodo, Music, Sparkle, Target } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { BookOpen, CalendarClock, CheckCircle2, ListTodo, Music, Sparkle, Target, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { bucketListSeed, demoPlaylist, dreamBoardSeed, quotePool } from '../data/demoData.js';
-import { loadLocalReadTogether, saveReadTogether, subscribeReadTogether } from '../services/coupleDashboardService.js';
+import {
+  loadLocalReadTogether,
+  migrateLocalBucketList,
+  removeBucketItem,
+  saveBucketItem,
+  saveReadTogether,
+  subscribeBucketList,
+  subscribeReadTogether,
+} from '../services/coupleDashboardService.js';
+import { firebaseEnabled } from '../services/firebase.js';
 import { remainingCountdown } from '../utils/date.js';
 import SectionTitle from './SectionTitle.jsx';
 import WatchPartyPanel from './WatchPartyPanel.jsx';
@@ -26,6 +35,7 @@ function loadExtrasState() {
         bucketList: defaultBucketList(),
         quote: quotePool[0],
         relationshipStart: '',
+        hadStoredBucketList: false,
       };
     }
 
@@ -36,6 +46,7 @@ function loadExtrasState() {
       bucketList: Array.isArray(parsed.bucketList) ? parsed.bucketList : defaultBucketList(),
       quote: typeof parsed.quote === 'string' && parsed.quote ? parsed.quote : quotePool[0],
       relationshipStart: typeof parsed.relationshipStart === 'string' ? parsed.relationshipStart : '',
+      hadStoredBucketList: Array.isArray(parsed.bucketList),
     };
   } catch {
     return {
@@ -45,6 +56,7 @@ function loadExtrasState() {
       bucketList: defaultBucketList(),
       quote: quotePool[0],
       relationshipStart: '',
+      hadStoredBucketList: false,
     };
   }
 }
@@ -57,10 +69,12 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
   const [playlist, setPlaylist] = useState(initialState.playlist);
   const [dreamBoard, setDreamBoard] = useState(initialState.dreamBoard);
   const [bucketList, setBucketList] = useState(initialState.bucketList);
+  const [bucketSyncState, setBucketSyncState] = useState(firebaseEnabled ? 'Connecting…' : 'On this device');
   const [quote, setQuote] = useState(initialState.quote);
   const [relationshipStart, setRelationshipStart] = useState(initialState.relationshipStart);
   const [readTogether, setReadTogether] = useState(() => loadLocalReadTogether());
   const [readSaveState, setReadSaveState] = useState('');
+  const bucketMigrationRef = useRef(false);
 
   const countdown = meetingDate ? remainingCountdown(meetingDate, now) : null;
   const daysTogether = useMemo(() => {
@@ -102,6 +116,57 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
   }, [coupleId, user?.uid]);
 
   useEffect(() => {
+    if (!firebaseEnabled || !coupleId || !user?.uid) {
+      setBucketSyncState('On this device');
+      return undefined;
+    }
+
+    let active = true;
+    const unsubscribe = subscribeBucketList(
+      coupleId,
+      async (items) => {
+        if (!active) return;
+        if (items.length) {
+          setBucketList(items);
+          setBucketSyncState('Synced');
+          return;
+        }
+
+        if (
+          !bucketMigrationRef.current
+          && initialState.hadStoredBucketList
+          && initialState.bucketList.length
+        ) {
+          bucketMigrationRef.current = true;
+          setBucketSyncState('Moving saved items…');
+          try {
+            const result = await migrateLocalBucketList(coupleId, user, initialState.bucketList);
+            if (!active) return;
+            if (!result.migrated && result.reason !== 'shared-list-exists') {
+              setBucketList([]);
+              setBucketSyncState('Synced');
+            }
+          } catch {
+            if (active) setBucketSyncState('Sync unavailable');
+          }
+          return;
+        }
+
+        setBucketList([]);
+        setBucketSyncState('Synced');
+      },
+      () => {
+        if (active) setBucketSyncState('Sync unavailable');
+      },
+    );
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [coupleId, user?.uid, initialState]);
+
+  useEffect(() => {
     localStorage.setItem(
       extrasKey,
       JSON.stringify({
@@ -141,12 +206,64 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
     window.setTimeout(() => setReadSaveState(''), 1600);
   }
 
+  async function addBucket(event) {
+    event.preventDefault();
+    const value = new FormData(event.currentTarget).get('bucket')?.toString().trim();
+    if (!value) return;
+    const item = {
+      id: crypto.randomUUID(),
+      text: value.slice(0, 240),
+      done: false,
+      createdAt: new Date().toISOString(),
+      createdBy: user?.uid || 'local',
+    };
+    setBucketList((previous) => [...previous, item]);
+    event.currentTarget.reset();
+
+    if (!firebaseEnabled) return;
+    setBucketSyncState('Saving…');
+    try {
+      await saveBucketItem(coupleId, user, item);
+      setBucketSyncState('Synced');
+    } catch {
+      setBucketList((previous) => previous.filter((entry) => entry.id !== item.id));
+      setBucketSyncState('Sync unavailable');
+    }
+  }
+
+  async function toggleBucket(item) {
+    const updated = { ...item, done: !item.done };
+    setBucketList((previous) => previous.map((entry) => (entry.id === item.id ? updated : entry)));
+    if (!firebaseEnabled) return;
+    setBucketSyncState('Saving…');
+    try {
+      await saveBucketItem(coupleId, user, updated);
+      setBucketSyncState('Synced');
+    } catch {
+      setBucketList((previous) => previous.map((entry) => (entry.id === item.id ? item : entry)));
+      setBucketSyncState('Sync unavailable');
+    }
+  }
+
+  async function deleteBucket(item) {
+    setBucketList((previous) => previous.filter((entry) => entry.id !== item.id));
+    if (!firebaseEnabled) return;
+    setBucketSyncState('Saving…');
+    try {
+      await removeBucketItem(coupleId, item.id);
+      setBucketSyncState('Synced');
+    } catch {
+      setBucketList((previous) => [...previous, item].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)));
+      setBucketSyncState('Sync unavailable');
+    }
+  }
+
   return (
     <section id="extras" className="glass rounded-3xl p-4 sm:p-6">
       <SectionTitle
         overline="Shared Life"
         title="Playlist, countdown, dreams, bucket list, and stats"
-        subtitle="Everything beyond chat that keeps long distance relational, intentional, and joyful."
+        subtitle="Reading and the bucket list sync live with your partner. Playlist, countdown, dreams, and relationship dates stay on this device for now."
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -293,41 +410,47 @@ export default function ExtrasPanel({ messageCount = 0, memoryCount = 0 }) {
         </article>
 
         <article className="rounded-2xl border border-white/10 bg-black/35 p-4 lg:col-span-2">
-          <p className="inline-flex items-center gap-2 text-sm text-roseGold">
-            <ListTodo size={14} />
-            Couple Bucket List
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="inline-flex items-center gap-2 text-sm text-roseGold">
+              <ListTodo size={14} />
+              Couple Bucket List
+            </p>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] ${bucketSyncState === 'Synced' ? 'border-emerald-300/20 bg-emerald-300/8 text-emerald-200' : bucketSyncState === 'Sync unavailable' ? 'border-amber-300/20 bg-amber-300/8 text-amber-100' : 'border-white/10 bg-white/[0.035] text-pink-100/55'}`}>
+              {bucketSyncState}
+            </span>
+          </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {!bucketList.length ? (
               <div className="md:col-span-2 rounded-xl border border-white/10 bg-black/35 px-3 py-3 text-xs text-pink-100/70">
-                No bucket list items yet.
+                No bucket list items yet. Add your first plan together.
               </div>
             ) : null}
             {bucketList.map((item) => (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                onClick={() => setBucketList((previous) => previous.map((entry) => (entry.id === item.id ? { ...entry, done: !entry.done } : entry)))}
-                className={`rounded-xl border px-3 py-2 text-left text-sm transition ${item.done ? 'border-blush/70 bg-blush/15 text-white' : 'border-white/10 bg-black/35 text-pink-100'}`}
+                className={`flex items-center gap-2 rounded-xl border px-2 py-1.5 transition ${item.done ? 'border-blush/70 bg-blush/15 text-white' : 'border-white/10 bg-black/35 text-pink-100'}`}
               >
-                <span className="inline-flex items-center gap-2">
-                  <CheckCircle2 size={14} className={item.done ? 'text-blush' : 'text-white/60'} />
-                  {item.text}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => toggleBucket(item)}
+                  className="flex min-h-9 min-w-0 flex-1 items-center gap-2 px-1 text-left text-sm"
+                >
+                  <CheckCircle2 size={14} className={`shrink-0 ${item.done ? 'text-blush' : 'text-white/60'}`} />
+                  <span className={`break-words ${item.done ? 'line-through opacity-75' : ''}`}>{item.text}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteBucket(item)}
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-pink-100/35 transition hover:bg-red-500/10 hover:text-red-200"
+                  aria-label={`Remove ${item.text}`}
+                >
+                  <X size={13} />
+                </button>
+              </div>
             ))}
           </div>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = new FormData(event.currentTarget).get('bucket')?.toString().trim();
-              if (!value) return;
-              setBucketList((previous) => [...previous, { id: crypto.randomUUID(), text: value, done: false }]);
-              event.currentTarget.reset();
-            }}
-            className="mt-3 flex gap-2"
-          >
-            <input name="bucket" placeholder="Add bucket item" className="flex-1 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-xs text-pink-100 outline-none" />
+          <form onSubmit={addBucket} className="mt-3 flex gap-2">
+            <input name="bucket" maxLength={240} placeholder="Add something you want to do together" className="flex-1 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-xs text-pink-100 outline-none focus:border-blush/50" />
             <button type="submit" className="rounded-full bg-white/10 px-4 py-2 text-xs text-pink-100 transition hover:bg-white/20">
               Add
             </button>
