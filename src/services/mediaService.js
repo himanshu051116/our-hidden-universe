@@ -12,6 +12,12 @@ export const DEFAULT_MEDIA_CONSTRAINTS = {
   },
 };
 
+function permissionMessage(type) {
+  return type === 'audio'
+    ? 'Microphone access is blocked. Allow microphone permission for OHS in your browser or app settings, then try again.'
+    : 'Camera or microphone access is blocked. Allow camera and microphone permission for OHS in your browser or app settings, then try again.';
+}
+
 export async function acquireLocalMedia(type = 'video') {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Camera and microphone access are not supported in this browser.');
@@ -29,13 +35,21 @@ export async function acquireLocalMedia(type = 'video') {
     return await navigator.mediaDevices.getUserMedia(constraints);
   } catch (error) {
     if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
-      throw new Error('Camera or microphone permission was denied.');
+      throw new Error(permissionMessage(type));
     }
     if (error?.name === 'NotFoundError') {
-      throw new Error('No compatible camera or microphone was found.');
+      throw new Error(
+        type === 'audio'
+          ? 'No compatible microphone was found on this device.'
+          : 'No compatible camera or microphone was found on this device.',
+      );
     }
     if (error?.name === 'NotReadableError') {
-      throw new Error('Your camera or microphone is busy in another app.');
+      throw new Error(
+        type === 'audio'
+          ? 'Your microphone is busy in another app. Close the other app and try again.'
+          : 'Your camera or microphone is busy in another app. Close the other app and try again.',
+      );
     }
     if (error?.name === 'OverconstrainedError') {
       return navigator.mediaDevices.getUserMedia({

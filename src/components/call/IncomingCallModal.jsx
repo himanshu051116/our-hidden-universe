@@ -1,23 +1,35 @@
-import { Phone, PhoneOff, Video } from 'lucide-react';
+import { Mic, Phone, PhoneOff, Video } from 'lucide-react';
 import { useCall } from '../../calls/CallContext.jsx';
 
 export default function IncomingCallModal() {
-  const { call, incomingCall, answerCall, declineCall } = useCall();
+  const { call, incomingCall, partner, answerCall, declineCall } = useCall();
 
   if (!incomingCall || call.status !== 'incoming-ringing') return null;
 
+  const audioOnly = incomingCall.type === 'audio';
+  const partnerName = partner?.displayName || partner?.email || 'Your partner';
+  const Icon = audioOnly ? Mic : Video;
+
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/80 px-4 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[80] grid place-items-center bg-black/80 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="incoming-call-title"
+    >
       <div className="glass w-full max-w-sm rounded-3xl p-6 text-center">
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-blush/15 text-blush">
-          <Video size={28} />
+          <Icon size={28} />
         </div>
         <p className="mt-5 text-xs uppercase tracking-[0.2em] text-roseGold">Incoming call</p>
-        <h2 className="mt-2 font-display text-3xl text-white">
-          Your partner is calling
+        <h2 id="incoming-call-title" className="mt-2 font-display text-3xl text-white">
+          {partnerName} is calling
         </h2>
         <p className="mt-2 text-sm text-pink-100/70">
-          {incomingCall.type === 'audio' ? 'Audio call' : 'Video call'}
+          {audioOnly ? 'Audio call' : 'Video call'}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-pink-100/45">
+          Your browser may ask for {audioOnly ? 'microphone' : 'camera and microphone'} permission when you answer.
         </p>
 
         <div className="mt-7 grid grid-cols-2 gap-3">

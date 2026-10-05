@@ -35,6 +35,11 @@ function targetFor(device) {
   return { token: device.targetId };
 }
 
+function memberName(snapshot) {
+  const data = snapshot?.data?.() || {};
+  return data.displayName || data.name || data.email || 'Your partner';
+}
+
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store, max-age=0');
 
@@ -88,12 +93,10 @@ export default async function handler(request, response) {
       return;
     }
 
-    const callerMember = await db.doc(
-      `couples/${coupleId}/members/${call.callerId}`,
-    ).get();
-    const calleeMember = await db.doc(
-      `couples/${coupleId}/members/${call.calleeId}`,
-    ).get();
+    const [callerMember, calleeMember] = await Promise.all([
+      db.doc(`couples/${coupleId}/members/${call.callerId}`).get(),
+      db.doc(`couples/${coupleId}/members/${call.calleeId}`).get(),
+    ]);
 
     if (!callerMember.exists || !calleeMember.exists) {
       response.status(403).json({ error: 'Call participants are not valid room members.' });
@@ -120,22 +123,27 @@ export default async function handler(request, response) {
 
     const link = absoluteCallLink(request, callId);
     const callType = call.type === 'audio' ? 'audio' : 'video';
+    const callerName = memberName(callerMember);
     const title = callType === 'audio' ? 'Incoming audio call' : 'Incoming video call';
+    const body = `${callerName} is calling you.`;
+    const expiresUnix = String(Math.floor(Date.now() / 1000) + 30);
 
     const messages = devices.map((device) => ({
       ...targetFor(device),
       notification: {
         title,
-        body: 'Open Our Hidden Universe to answer.',
+        body,
       },
       data: {
         type: 'incoming_call',
         coupleId,
         callId,
         callType,
+        callerName,
       },
       android: {
         priority: 'high',
+        ttl: 30000,
         notification: {
           channelId: 'calls',
           tag: `ohu-call-${callId}`,
@@ -145,6 +153,7 @@ export default async function handler(request, response) {
       apns: {
         headers: {
           'apns-priority': '10',
+          'apns-expiration': expiresUnix,
         },
         payload: {
           aps: {
@@ -154,12 +163,17 @@ export default async function handler(request, response) {
         },
       },
       webpush: {
+        headers: {
+          TTL: '30',
+          Urgency: 'high',
+        },
         fcmOptions: {
           link,
         },
         notification: {
           tag: `ohu-call-${callId}`,
           requireInteraction: true,
+          renotify: true,
           icon: '/icon-192.png',
           badge: '/icon-192.png',
         },

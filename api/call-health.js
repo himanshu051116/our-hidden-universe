@@ -1,5 +1,14 @@
 import { getAdminServices } from './_firebaseAdmin.js';
 
+function publicHealthFlags() {
+  return {
+    turnConfigured: Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET),
+    cronSecretConfigured: Boolean(process.env.CRON_SECRET),
+    vapidConfigured: Boolean(process.env.VITE_FIREBASE_VAPID_KEY),
+    nodeMajor: Number(process.versions.node.split('.')[0]),
+  };
+}
+
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store, max-age=0');
 
@@ -20,22 +29,19 @@ export default async function handler(request, response) {
     const { auth, db } = getAdminServices();
     const decoded = await auth.verifyIdToken(idToken);
 
-    // Read-only, non-sensitive existence check. No secrets are returned.
     await db.doc(`users/${decoded.uid}`).get();
 
     response.status(200).json({
       firebaseAdmin: true,
-      turnConfigured: Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET),
-      cronSecretConfigured: Boolean(process.env.CRON_SECRET),
-      nodeMajor: Number(process.versions.node.split('.')[0]),
+      pushServerConfigured: true,
+      ...publicHealthFlags(),
       checkedAt: new Date().toISOString(),
     });
-  } catch (error) {
+  } catch {
     response.status(500).json({
       firebaseAdmin: false,
-      turnConfigured: Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET),
-      cronSecretConfigured: Boolean(process.env.CRON_SECRET),
-      nodeMajor: Number(process.versions.node.split('.')[0]),
+      pushServerConfigured: false,
+      ...publicHealthFlags(),
       error: 'Call infrastructure health check failed.',
     });
   }

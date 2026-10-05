@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { Check, Copy, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import BottomNav from '../components/navigation/BottomNav.jsx';
@@ -7,6 +7,23 @@ import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import useEasterEggs from '../hooks/useEasterEggs.js';
 import { resetCoupleData } from '../services/resetService.js';
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const input = document.createElement('textarea');
+  input.value = value;
+  input.setAttribute('readonly', '');
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand('copy');
+  input.remove();
+}
 
 export default function Universe() {
   const { coupleId } = useAuth();
@@ -23,6 +40,18 @@ export default function Universe() {
   const [resetBusy, setResetBusy] = useState(false);
   const [resetVersion, setResetVersion] = useState(0);
   const [resetStatus, setResetStatus] = useState('');
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  async function onCopyCoupleCode() {
+    if (!coupleId) return;
+    try {
+      await copyText(coupleId);
+      setCopiedCode(true);
+      window.setTimeout(() => setCopiedCode(false), 1800);
+    } catch {
+      setCopiedCode(false);
+    }
+  }
 
   async function onResetData() {
     const confirmed = window.confirm('Clear all couple data for this universe? This removes chat records and saved entries.');
@@ -49,6 +78,24 @@ export default function Universe() {
   return (
     <PageShell className="px-4 pb-32 pt-5 sm:px-8 sm:pb-28 sm:pt-6 lg:pb-10 lg:pt-24">
       <div className="mx-auto w-full max-w-6xl">
+        {coupleId ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/30 px-3.5 py-2.5 backdrop-blur-md sm:px-4">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-pink-100/45">Couple code</p>
+              <p className="mt-0.5 truncate font-mono text-sm font-semibold tracking-[0.16em] text-white">{coupleId}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onCopyCoupleCode}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-xs font-medium text-pink-100 transition hover:border-blush/45 hover:text-white"
+              aria-label="Copy couple code"
+            >
+              {copiedCode ? <Check size={14} /> : <Copy size={14} />}
+              {copiedCode ? 'Copied' : 'Copy code'}
+            </button>
+          </div>
+        ) : null}
+
         {resetStatus ? (
           <p className="mb-4 rounded-2xl border border-white/15 bg-black/35 px-4 py-2 text-xs text-pink-100/85">
             {resetStatus}

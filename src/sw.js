@@ -5,13 +5,22 @@ import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
+const fallbackFirebaseConfig = {
+  apiKey: 'AIzaSyCQMSKneV4KmH3qpyWN7-ag-c0s9_CdFD8',
+  authDomain: 'secret-space0.firebaseapp.com',
+  projectId: 'secret-space0',
+  storageBucket: 'secret-space0.firebasestorage.app',
+  messagingSenderId: '1005220151892',
+  appId: '1:1005220151892:web:2753295f95cb56caed23c1',
+};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || fallbackFirebaseConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || fallbackFirebaseConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || fallbackFirebaseConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackFirebaseConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || fallbackFirebaseConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
 };
 
 const messagingConfigured = Boolean(
@@ -26,18 +35,17 @@ if (messagingConfigured) {
   const messaging = getMessaging(firebaseApp);
 
   onBackgroundMessage(messaging, async (payload) => {
-    // Notification+data FCM messages are normally displayed automatically.
-    // This branch provides a fallback for data-only messages.
     if (payload.notification) return;
 
     const data = payload.data || {};
     if (data.type !== 'incoming_call') return;
 
     const title = data.callType === 'audio' ? 'Incoming audio call' : 'Incoming video call';
+    const callerName = data.callerName || 'Your partner';
     const target = `/universe/chat?callId=${encodeURIComponent(data.callId || '')}`;
 
     await self.registration.showNotification(title, {
-      body: 'Open Our Hidden Universe to answer.',
+      body: `${callerName} is calling you.`,
       tag: `ohu-call-${data.callId || 'incoming'}`,
       renotify: true,
       requireInteraction: true,
