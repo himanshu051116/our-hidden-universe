@@ -38,7 +38,7 @@ export default function Landing() {
               transition={{ delay: 0.2 }}
               className="mt-5 max-w-2xl text-lg text-pink-100/85"
             >
-              Our Hidden Universe helps couples stay close with private chat, shared memories, watch parties, and romantic rituals made for two.{' '}
+              Stay close through private chat, shared memories, Watch Together, Open When letters, and a living Night Sky made for two.{' '}
               <span className="block pt-2 text-base text-blush">
                 <Typewriter text={welcome} />
               </span>
@@ -57,7 +57,7 @@ export default function Landing() {
                 </GlowButton>
               </Link>
               <a href="#story" className="rounded-full border border-white/15 px-5 py-3 text-sm text-pink-100 transition hover:border-blush/60">
-                Scroll story
+                See what you can share
               </a>
             </motion.div>
           </div>
@@ -73,18 +73,18 @@ export default function Landing() {
           {[
             {
               icon: <Lock size={16} />,
-              title: 'Private and secure',
-              text: 'Access code plus authentication and encrypted messages.',
+              title: 'Private access',
+              text: 'Authentication, a couple code, and encrypted chat keep the shared space personal to you both.',
             },
             {
               icon: <MessageCircleHeart size={16} />,
-              title: 'Always connected',
-              text: 'Real-time chat, voice notes, images, and seen indicators.',
+              title: 'Stay connected',
+              text: 'Real-time chat, voice notes, images, calls, reactions, typing, and seen indicators.',
             },
             {
               icon: <Stars size={16} />,
-              title: 'Made for memories',
-              text: 'Timeline, open-when letters, bucket list, and shared dreams.',
+              title: 'Keep your story together',
+              text: 'Shared memories, Open When letters, a couple bucket list, reading progress, and your Night Sky.',
             },
           ].map((item, index) => (
             <motion.article
@@ -99,7 +99,7 @@ export default function Landing() {
                 {item.icon}
                 {item.title}
               </p>
-              <p className="mt-2 text-sm text-pink-100/85">{item.text}</p>
+              <p className="mt-2 text-sm leading-6 text-pink-100/82">{item.text}</p>
             </motion.article>
           ))}
         </div>
@@ -108,14 +108,12 @@ export default function Landing() {
       <section className="px-4 pb-20 sm:px-8">
         <div className="mx-auto max-w-6xl rounded-3xl border border-white/10 bg-black/30 p-5 sm:p-8">
           <div className="max-w-3xl">
-            <p className="text-xs uppercase tracking-[0.22em] text-roseGold">A Secret Space Made For Two</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-roseGold">A secret space made for two</p>
             <h2 className="mt-3 font-display text-3xl text-white sm:text-4xl">
-              Your private couple app for connection, memories, and distance.
+              More than a messenger: one private place for the moments you share.
             </h2>
             <p className="mt-4 text-sm leading-7 text-pink-100/80 sm:text-base">
-              Build a hidden universe with your partner where conversations, relationship memories, shared plans, and quiet
-              moments live together. OHS is designed for long-distance couples and anyone who wants a more personal private
-              space than an ordinary messaging app.
+              OHS brings conversations, synchronized activities, shared memories, letters, rituals, and your relationship’s Night Sky into one private universe. It is especially useful when distance makes ordinary shared moments harder to keep in one place.
             </p>
           </div>
 
@@ -124,21 +122,21 @@ export default function Landing() {
               <MessageCircleHeart size={18} className="text-blush" />
               <h3 className="mt-3 font-display text-2xl text-white">Private couple chat</h3>
               <p className="mt-2 text-sm leading-6 text-pink-100/75">
-                Share encrypted messages, photos, voice notes, reactions, and presence inside your couple room.
+                Share encrypted messages, photos, voice notes, reactions, and presence inside your universe.
               </p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <Clapperboard size={18} className="text-blush" />
-              <h3 className="mt-3 font-display text-2xl text-white">Watch together</h3>
+              <h3 className="mt-3 font-display text-2xl text-white">Watch Together</h3>
               <p className="mt-2 text-sm leading-6 text-pink-100/75">
-                Coordinate watch parties across devices with synchronized playback cues, countdowns, and timestamps.
+                Use synchronized playback for supported players, or a shared countdown and position when a streaming service opens separately.
               </p>
             </article>
             <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <HeartHandshake size={18} className="text-blush" />
               <h3 className="mt-3 font-display text-2xl text-white">Shared relationship space</h3>
               <p className="mt-2 text-sm leading-6 text-pink-100/75">
-                Keep a timeline, night sky, open-when letters, dreams, reading progress, and plans in one romantic home.
+                Keep shared memories, a living Night Sky, Open When letters, a bucket list, and reading progress in one romantic home.
               </p>
             </article>
           </div>
