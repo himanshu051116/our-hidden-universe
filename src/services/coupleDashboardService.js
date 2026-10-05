@@ -201,6 +201,12 @@ function saveLocalOpenWhenItem(item) {
   return next;
 }
 
+function deleteLocalOpenWhenItem(itemId) {
+  const next = loadLocalOpenWhen().filter((entry) => entry.id !== itemId);
+  localStorage.setItem(openWhenKey, JSON.stringify(next));
+  return next;
+}
+
 export function subscribeOpenWhen(coupleId, onChange, onError) {
   if (!firebaseEnabled || !coupleId) {
     onChange(loadLocalOpenWhen());
@@ -215,11 +221,13 @@ export function subscribeOpenWhen(coupleId, onChange, onError) {
 }
 
 export async function saveOpenWhen(coupleId, user, item) {
+  const now = new Date().toISOString();
   const payload = {
-    title: item.title || '',
-    message: item.message || '',
-    musicUrl: item.musicUrl || '',
-    videoUrl: item.videoUrl || '',
+    title: String(item.title || '').trim().slice(0, 100),
+    message: String(item.message || '').trim().slice(0, 4000),
+    musicUrl: String(item.musicUrl || '').trim().slice(0, 1000),
+    videoUrl: String(item.videoUrl || '').trim().slice(0, 1000),
+    createdAt: item.createdAt || now,
     updatedBy: user?.uid || 'local',
     updatedByName: user?.displayName || user?.email || 'You',
   };
@@ -239,4 +247,13 @@ export async function saveOpenWhen(coupleId, user, item) {
     },
     { merge: true },
   );
+}
+
+export async function deleteOpenWhen(coupleId, itemId) {
+  if (!itemId) return;
+  if (!firebaseEnabled || !coupleId) {
+    deleteLocalOpenWhenItem(itemId);
+    return;
+  }
+  await deleteDoc(doc(db, 'couples', coupleId, 'openWhen', itemId));
 }
