@@ -86,7 +86,7 @@ export default function ExtrasPanel() {
     }
 
     let active = true;
-    const alreadyHandled = localStorage.getItem(migrationKey(coupleId)) === 'done';
+    let migrationHandled = localStorage.getItem(migrationKey(coupleId)) === 'done';
     const unsubscribe = subscribeBucketList(
       coupleId,
       (items) => {
@@ -95,12 +95,13 @@ export default function ExtrasPanel() {
         setBucketSyncState('Synced');
 
         if (items.length) {
+          migrationHandled = true;
           localStorage.setItem(migrationKey(coupleId), 'done');
           setLegacyImportAvailable(false);
           return;
         }
 
-        setLegacyImportAvailable(!alreadyHandled && initialState.legacyBucketList.length > 0);
+        setLegacyImportAvailable(!migrationHandled && initialState.legacyBucketList.length > 0);
       },
       () => {
         if (active) setBucketSyncState('Sync unavailable');
@@ -161,6 +162,7 @@ export default function ExtrasPanel() {
     try {
       await saveBucketItem(coupleId, user, item);
       localStorage.setItem(migrationKey(coupleId), 'done');
+      setLegacyImportAvailable(false);
       setBucketSyncState('Synced');
     } catch {
       setBucketList((previous) => previous.filter((entry) => entry.id !== item.id));
@@ -189,6 +191,7 @@ export default function ExtrasPanel() {
     try {
       await removeBucketItem(coupleId, item.id);
       localStorage.setItem(migrationKey(coupleId), 'done');
+      setLegacyImportAvailable(false);
       setBucketSyncState('Synced');
     } catch {
       setBucketList((previous) => [...previous, item].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0)));
