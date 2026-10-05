@@ -5,8 +5,9 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { db, firebaseEnabled, storage } from './firebase.js';
 
 const LOCAL_KEY = 'ohu-memories-v1';
@@ -63,7 +64,38 @@ function safeExtension(name = '', mime = '') {
   return fromMime || 'bin';
 }
 
-async function uploadMemoryBlob({ coupleId, userId, blob, fileName = '', mediaType = 'image' }) {
+function safeMediaUrl(value) {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('Media links must use http:// or https://.');
+    }
+    return parsed.toString();
+  } catch (error) {
+    if (error?.message?.includes('http://')) throw error;
+    throw new Error('Enter a valid media link.');
+  }
+}
+
+function uploadTaskPromise(task, onProgress) {
+  return new Promise((resolve, reject) => {
+    task.on(
+      'state_changed',
+      (snapshot) => {
+        if (!onProgress) return;
+        const total = Number(snapshot.totalBytes || 0);
+        const transferred = Number(snapshot.bytesTransferred || 0);
+        onProgress(total ? Math.round((transferred / total) * 100) : 0);
+      },
+      reject,
+      () => resolve(task.snapshot.ref),
+    );
+  });
+}
+
+async function uploadMemoryBlob({ coupleId, userId, blob, fileName = '', mediaType = 'image', onProgress }) {
   if (!storage) throw new Error('Shared media storage is not available on this deployment.');
   if (!blob) return { mediaUrl: '', storagePath: '', mediaType };
   if (blob.size > MEMORY_MAX_UPLOAD_BYTES) {
@@ -79,16 +111,28 @@ async function uploadMemoryBlob({ coupleId, userId, blob, fileName = '', mediaTy
   const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const storagePath = `couples/${coupleId}/memories/${userId}/${key}.${extension}`;
   const objectRef = ref(storage, storagePath);
-  await uploadBytes(objectRef, blob, { contentType: mime });
+  const task = uploadBytesResumable(objectRef, blob, { contentType: mime });
+
+  try {
+    await uploadTaskPromise(task, onProgress);
+  } catch (error) {
+    task.cancel?.();
+    throw error;
+  }
+
   const mediaUrl = await getDownloadURL(objectRef);
   return { mediaUrl, storagePath, mediaType: resolvedType };
 }
 
-export async function saveSharedMemory({ coupleId, user, memory, file }) {
+export async function saveSharedMemory({ coupleId, user, memory, file, onProgress }) {
   if (!coupleId || !user?.uid) throw new Error('Open your shared universe before adding a memory.');
   if (!firebaseEnabled) throw new Error('Shared memories need the live room connection.');
 
-  let mediaUrl = String(memory.mediaUrl || '').trim();
+  const title = String(memory.title || '').trim().slice(0, 120);
+  const note = String(memory.note || '').trim().slice(0, 4000);
+  if (!memory.date || !title) throw new Error('Add a date and title before saving this memory.');
+
+  let mediaUrl = file ? '' : safeMediaUrl(memory.mediaUrl);
   let storagePath = '';
   let mediaType = memory.mediaType || 'note';
   let mediaFileName = memory.mediaFileName || '';
@@ -100,18 +144,21 @@ export async function saveSharedMemory({ coupleId, user, memory, file }) {
       blob: file,
       fileName: file.name,
       mediaType,
+      onProgress,
     });
     mediaUrl = uploaded.mediaUrl;
     storagePath = uploaded.storagePath;
     mediaType = uploaded.mediaType;
     mediaFileName = file.name;
+  } else if (!mediaUrl) {
+    mediaType = 'note';
   }
 
   const memoryId = crypto.randomUUID();
   await setDoc(doc(db, 'couples', coupleId, 'memories', memoryId), {
     date: memory.date,
-    title: String(memory.title || '').trim(),
-    note: String(memory.note || '').trim(),
+    title,
+    note,
     mediaType,
     mediaUrl,
     mediaFileName,
@@ -125,11 +172,25 @@ export async function saveSharedMemory({ coupleId, user, memory, file }) {
   return memoryId;
 }
 
+export async function updateSharedMemory(coupleId, memoryId, updates) {
+  if (!firebaseEnabled || !coupleId || !memoryId) return;
+  const title = String(updates.title || '').trim().slice(0, 120);
+  const note = String(updates.note || '').trim().slice(0, 4000);
+  if (!updates.date || !title) throw new Error('Keep a date and title on this memory.');
+
+  await updateDoc(doc(db, 'couples', coupleId, 'memories', memoryId), {
+    date: updates.date,
+    title,
+    note,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 function dataUrlToBlob(dataUrl) {
   return fetch(dataUrl).then((response) => response.blob());
 }
 
-export async function moveDeviceMemoryToShared({ coupleId, user, memory }) {
+export async function moveDeviceMemoryToShared({ coupleId, user, memory, onProgress }) {
   if (!coupleId || !user?.uid || !firebaseEnabled) {
     throw new Error('Shared memories need the live room connection.');
   }
@@ -148,18 +209,21 @@ export async function moveDeviceMemoryToShared({ coupleId, user, memory }) {
       blob,
       fileName: memory.mediaFileName || `memory.${safeExtension('', blob.type)}`,
       mediaType,
+      onProgress,
     });
     mediaUrl = uploaded.mediaUrl;
     storagePath = uploaded.storagePath;
     mediaType = uploaded.mediaType;
+  } else {
+    mediaUrl = safeMediaUrl(mediaUrl);
   }
 
   await setDoc(
     doc(db, 'couples', coupleId, 'memories', memoryId),
     {
       date: memory.date || new Date().toISOString().slice(0, 10),
-      title: String(memory.title || 'Memory').trim(),
-      note: String(memory.note || '').trim(),
+      title: String(memory.title || 'Memory').trim().slice(0, 120),
+      note: String(memory.note || '').trim().slice(0, 4000),
       mediaType,
       mediaUrl,
       mediaFileName: memory.mediaFileName || '',
