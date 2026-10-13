@@ -764,13 +764,12 @@ export function CallProvider({ children }) {
     let createdCallId = null;
 
     try {
-      const [stream, iceConfig] = await Promise.all([
-        acquireLocalMedia(type),
-        resolveIceServers(coupleId),
-      ]);
-
+      // Establish ownership of the media tracks before awaiting credentials.
+      // Promise.all can reject after getUserMedia succeeds, leaking a live camera.
+      const stream = await acquireLocalMedia(type);
       localStreamRef.current = stream;
       setLocalStream(stream);
+      const iceConfig = await resolveIceServers(coupleId);
 
       setState((previous) => ({
         ...previous,
@@ -869,14 +868,11 @@ export function CallProvider({ children }) {
     }));
 
     try {
-      const [stream, iceConfig] = await Promise.all([
-        acquireLocalMedia(call.type || 'video'),
-        resolveIceServers(coupleId),
-      ]);
-
+      const stream = await acquireLocalMedia(call.type || 'video');
       localStreamRef.current = stream;
       setLocalStream(stream);
       activeCallRef.current = call;
+      const iceConfig = await resolveIceServers(coupleId);
 
       setState((previous) => ({
         ...previous,
