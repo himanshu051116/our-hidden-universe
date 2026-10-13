@@ -42,3 +42,21 @@ export function safeNotificationOrigin(value) {
     return 'https://ohs.vercel.app';
   }
 }
+
+export function createPushTestMessage(device) {
+  const target = device.targetType === 'fid' ? { fid: device.targetId } : { token: device.targetId };
+  const data = {
+    type: 'push_test',
+    title: 'OHS background alert test',
+    body: 'Firebase delivered this test alert to your device.',
+  };
+  if (device.platform === 'web') {
+    return { ...target, data, webpush: { headers: { TTL: '60', Urgency: 'high' } } };
+  }
+  return {
+    ...target,
+    data,
+    notification: { title: data.title, body: data.body },
+    android: { priority: 'high', notification: { channelId: 'calls', tag: 'ohu-push-test' } },
+  };
+}
