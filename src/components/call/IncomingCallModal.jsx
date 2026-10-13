@@ -32,6 +32,7 @@ export default function IncomingCallModal() {
             {partnerName}
           </h2>
           <p className="mt-2 text-sm text-pink-100/58">is calling you on Our Hidden Universe</p>
+          {call.error ? <p role="alert" className="mx-auto mt-3 max-w-xs rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-100">{call.error}</p> : null}
 
           <div className="mx-auto mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-[11px] text-pink-100/60">
             <Icon size={13} />
