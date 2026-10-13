@@ -23,6 +23,10 @@ export function classifyCallForCleanup(call, now = Date.now()) {
     const cutoff = ended || created;
     return { remove: cutoff > 0 && cutoff + HOUR_MS < now, historyResult: null };
   }
-  // Connected/reconnecting sessions without an explicit end are preserved.
+  // A browser crash may leave a connected call forever. After three days
+  // even unusually long sessions are no longer considered live.
+  if (call.status === 'connecting' || call.status === 'connected' || call.status === 'reconnecting') {
+    return { remove: created > 0 && created + 72 * HOUR_MS < now, historyResult: null };
+  }
   return { remove: false, historyResult: null };
 }
