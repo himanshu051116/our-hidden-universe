@@ -635,7 +635,9 @@ export function CallProvider({ children }) {
 
         if (call.status === 'failed') {
           await recordHistory(call, 'failed');
-          await finishLocal('Call failed.', true);
+          await finishLocal('Call failed. Check device and connection settings, then retry.', false);
+          stateRef.current = { ...initialCallState, status: CALL_STATUS.FAILED, error: 'Call failed. Check device and connection settings, then retry.' };
+          setState(stateRef.current);
           return;
         }
 
@@ -780,11 +782,14 @@ export function CallProvider({ children }) {
       closePeerConnection(peerRef.current);
       peerRef.current = null;
 
-      setState((previous) => ({
-        ...previous,
-        status: CALL_STATUS.FAILED,
-        error: error?.message || 'Unable to start the call.',
-      }));
+      activeCallRef.current = null;
+      remoteIceUnsubRef.current?.();
+      callUnsubRef.current?.();
+      remoteIceUnsubRef.current = null;
+      callUnsubRef.current = null;
+      const failed = { ...initialCallState, status: CALL_STATUS.FAILED, error: error?.message || 'Unable to start the call.' };
+      stateRef.current = failed;
+      setState(failed);
       throw error;
     } finally {
       startLockRef.current = false;
