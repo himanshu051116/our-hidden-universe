@@ -391,7 +391,10 @@ export function CallProvider({ children }) {
     try {
       // Short-lived TURN credentials may expire during a long call; refresh before ICE restart.
       const freshConfig = await resolveIceServers(coupleId);
-      if (peer.signalingState !== 'stable' || peer.connectionState === 'closed') return;
+      if (peer.signalingState !== 'stable' || peer.connectionState === 'closed') {
+        restartInFlightRef.current = false;
+        return;
+      }
       peer.setConfiguration({ ...peer.getConfiguration(), iceServers: freshConfig.iceServers });
       setState((previous) => ({ ...previous, relayAvailable: freshConfig.relayAvailable, warning: freshConfig.warning }));
       peer.restartIce?.();
