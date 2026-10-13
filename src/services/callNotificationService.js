@@ -372,6 +372,18 @@ export async function showIncomingCallAlert(call, callerName = 'Your partner') {
   }
 }
 
+export async function dismissIncomingCallAlert(callId) {
+  if (!callId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  alertedCalls.delete(callId);
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const notifications = await registration?.getNotifications?.({ tag: `ohu-call-${callId}` });
+    (notifications || []).forEach((notification) => notification.close());
+  } catch {
+    // Closing a notification is best-effort and never blocks the call.
+  }
+}
+
 export async function enableCallNotifications(coupleId, user) {
   if (!firebaseEnabled || !user?.uid || !coupleId) {
     return { enabled: false, status: 'unavailable', foregroundEnabled: false };
