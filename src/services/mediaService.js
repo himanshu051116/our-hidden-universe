@@ -94,7 +94,12 @@ export async function switchCamera(stream, peerConnection, currentFacingMode = '
     ?.find((candidate) => candidate.track?.kind === 'video');
 
   if (sender) {
-    await sender.replaceTrack(replacementTrack);
+    try {
+      await sender.replaceTrack(replacementTrack);
+    } catch (error) {
+      stopMediaStream(replacementStream);
+      throw error;
+    }
   }
 
   if (currentVideoTrack) {
