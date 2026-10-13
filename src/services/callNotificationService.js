@@ -15,6 +15,7 @@ const deviceIdKey = 'ohu-call-device-id';
 
 let nativeListenersReady = false;
 let nativeRegistrationContext = null;
+let nativeRegistrationWaiter = null;
 let nativeHandles = [];
 let webRegistrationUnsubscribe = null;
 let webUnregistrationUnsubscribe = null;
@@ -98,13 +99,12 @@ async function ensureNativeListeners() {
       const context = nativeRegistrationContext;
       if (!context?.coupleId || !context?.user?.uid) return;
 
-      await saveRegistration(
-        context.coupleId,
-        context.user,
-        registration.value,
-        'token',
-        Capacitor.getPlatform(),
-      ).catch(() => {});
+      try {
+        await saveRegistration(context.coupleId, context.user, registration.value, 'token', Capacitor.getPlatform());
+        nativeRegistrationWaiter?.resolve({ enabled: true, status: 'enabled', platform: Capacitor.getPlatform(), targetType: 'token' });
+      } catch {
+        nativeRegistrationWaiter?.resolve({ enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token' });
+      }
     }),
   );
 
@@ -116,7 +116,9 @@ async function ensureNativeListeners() {
   );
 
   nativeHandles.push(
-    await PushNotifications.addListener('registrationError', () => {}),
+    await PushNotifications.addListener('registrationError', () => {
+      nativeRegistrationWaiter?.resolve({ enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token' });
+    }),
   );
 }
 
@@ -148,14 +150,24 @@ async function registerNative(coupleId, user, requestPermission) {
     };
   }
 
-  await PushNotifications.register();
-
-  return {
-    enabled: true,
-    status: 'enabled',
-    platform: Capacitor.getPlatform(),
-    targetType: 'token',
-  };
+  // The OS registration event and Firestore device write determine success,
+  // not merely the return of PushNotifications.register().
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      if (nativeRegistrationWaiter?.resolve === settle) settle({
+        enabled: false, status: 'registration-timeout', platform: Capacitor.getPlatform(), targetType: 'token',
+      });
+    }, 12000);
+    const settle = (result) => {
+      window.clearTimeout(timeout);
+      if (nativeRegistrationWaiter?.resolve === settle) nativeRegistrationWaiter = null;
+      resolve(result);
+    };
+    nativeRegistrationWaiter = { resolve: settle };
+    PushNotifications.register().catch(() => settle({
+      enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token',
+    }));
+  });
 }
 
 async function showForegroundCallNotification(serviceWorkerRegistration, payload) {
@@ -427,6 +439,7 @@ export function disposeNativeCallNotificationListeners() {
   nativeHandles = [];
   nativeListenersReady = false;
   nativeRegistrationContext = null;
+  nativeRegistrationWaiter = null;
 
   webRegistrationUnsubscribe?.();
   webUnregistrationUnsubscribe?.();
