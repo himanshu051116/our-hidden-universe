@@ -4,13 +4,25 @@ export const FALLBACK_ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
 ];
 
+export function validateIceServers(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    const urls = (Array.isArray(entry?.urls) ? entry.urls : [entry?.urls])
+      .filter((url) => typeof url === 'string' && /^(stun|stuns|turn|turns):[^\\s]+$/i.test(url));
+    if (!urls.length) return [];
+    const needsCredentials = urls.some((url) => /^turns?:/i.test(url));
+    if (needsCredentials && (!entry.username || !entry.credential)) return [];
+    return [{ urls, ...(needsCredentials ? { username: entry.username, credential: entry.credential } : {}) }];
+  });
+}
+
 export async function resolveIceServers(coupleId) {
   if (!firebaseEnabled || !auth?.currentUser || !coupleId) {
     return {
       iceServers: FALLBACK_ICE_SERVERS,
       relayAvailable: false,
       expiresAt: null,
-      warning: 'TURN credentials are unavailable in local/demo mode.',
+      warning: 'TURN relay is unavailable in local/demo mode.',
     };
   }
 
@@ -32,13 +44,15 @@ export async function resolveIceServers(coupleId) {
     }
 
     const payload = await response.json();
-    if (!Array.isArray(payload.iceServers) || !payload.iceServers.length) {
-      throw new Error('TURN endpoint returned no ICE servers.');
+    const safeServers = validateIceServers(payload.iceServers);
+    if (!safeServers.length) throw new Error('TURN endpoint returned no valid ICE servers.');
+    if (payload.expiresAt && Number(payload.expiresAt) <= Date.now() + 15_000) {
+      throw new Error('TURN credentials are already expiring.');
     }
 
     return {
-      iceServers: payload.iceServers,
-      relayAvailable: payload.iceServers.some((entry) =>
+      iceServers: [...FALLBACK_ICE_SERVERS, ...safeServers],
+      relayAvailable: safeServers.some((entry) =>
         (Array.isArray(entry.urls) ? entry.urls : [entry.urls])
           .filter(Boolean)
           .some((url) => String(url).startsWith('turn:') || String(url).startsWith('turns:')),
@@ -51,7 +65,7 @@ export async function resolveIceServers(coupleId) {
       iceServers: FALLBACK_ICE_SERVERS,
       relayAvailable: false,
       expiresAt: null,
-      warning: 'TURN unavailable; this call is using STUN-only fallback.',
+      warning: 'TURN relay is not configured or reachable. STUN-only calling may fail on restrictive networks.',
     };
   }
 }
