@@ -37,3 +37,48 @@ jobs:
 
       - name: Build production app
         run: npm run build
+
+  call-e2e:
+    name: Opt-in two-account WebRTC browser test
+    if: github.event_name == 'pull_request' && vars.OHS_ENABLE_CALL_E2E == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      OHS_TEST_USER_A_EMAIL: ${{ secrets.OHS_TEST_USER_A_EMAIL }}
+      OHS_TEST_USER_A_PASSWORD: ${{ secrets.OHS_TEST_USER_A_PASSWORD }}
+      OHS_TEST_USER_B_EMAIL: ${{ secrets.OHS_TEST_USER_B_EMAIL }}
+      OHS_TEST_USER_B_PASSWORD: ${{ secrets.OHS_TEST_USER_B_PASSWORD }}
+      OHS_TEST_COUPLE_CODE: ${{ secrets.OHS_TEST_COUPLE_CODE }}
+      OHS_TEST_BASE_URL: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Require dedicated accounts
+        shell: bash
+        run: |
+          for key in OHS_TEST_USER_A_EMAIL OHS_TEST_USER_A_PASSWORD OHS_TEST_USER_B_EMAIL OHS_TEST_USER_B_PASSWORD OHS_TEST_COUPLE_CODE; do
+            if [ -z "${!key}" ]; then echo "::error::Missing secret $key"; exit 1; fi
+          done
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Launch preview locally without deploying
+        run: |
+          nohup npm run preview -- --host 127.0.0.1 > /tmp/ohs-preview.log 2>&1 &
+          for i in {1..40}; do
+            curl -fsS http://127.0.0.1:4173/ > /dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/ohs-preview.log
+          exit 1
+      - run: npx playwright test tests/e2e/call-smoke.spec.js
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: call-e2e-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
