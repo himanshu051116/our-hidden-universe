@@ -1,0 +1,55 @@
+name: Two-account calling acceptance
+
+# Manual only: never runs from a deployment-producing Git push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Browser audio and video calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      OHS_TEST_USER_A_EMAIL: ${{ secrets.OHS_TEST_USER_A_EMAIL }}
+      OHS_TEST_USER_A_PASSWORD: ${{ secrets.OHS_TEST_USER_A_PASSWORD }}
+      OHS_TEST_USER_B_EMAIL: ${{ secrets.OHS_TEST_USER_B_EMAIL }}
+      OHS_TEST_USER_B_PASSWORD: ${{ secrets.OHS_TEST_USER_B_PASSWORD }}
+      OHS_TEST_COUPLE_CODE: ${{ secrets.OHS_TEST_COUPLE_CODE }}
+      OHS_TEST_BASE_URL: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Require dedicated Firebase test accounts
+        shell: bash
+        run: |
+          for name in OHS_TEST_USER_A_EMAIL OHS_TEST_USER_A_PASSWORD OHS_TEST_USER_B_EMAIL OHS_TEST_USER_B_PASSWORD OHS_TEST_COUPLE_CODE; do
+            if [ -z "${!name}" ]; then echo "::error::Missing GitHub Actions secret $name"; exit 1; fi
+          done
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start local preview without touching Vercel
+        run: |
+          nohup npm run preview -- --host 127.0.0.1 > /tmp/ohs-preview.log 2>&1 &
+          for i in {1..40}; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/ohs-preview.log
+          exit 1
+      - name: Run two-account browser call suite
+        run: npx playwright test tests/e2e/call-smoke.spec.js
+      - name: Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-call-traces
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
