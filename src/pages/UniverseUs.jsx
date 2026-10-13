@@ -2,7 +2,7 @@ import { ArrowRight, Bell, BellRing, Cake, DatabaseZap, Heart, Images, KeyRound,
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
-import { sendTestOnDeviceAlert } from '../services/callNotificationService.js';
+import { sendTestOnDeviceAlert, sendBackgroundPushTest } from '../services/callNotificationService.js';
 import CallReadinessCard from '../components/call/CallReadinessCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -38,7 +38,7 @@ const experienceLinks = [
 ];
 
 export default function UniverseUs() {
-  const { logout, coupleCodeDisplay } = useAuth();
+  const { logout, coupleCodeDisplay, coupleId } = useAuth();
   const { notificationStatus, enableCallNotifications, refreshCallNotificationStatus } = useCall();
   const { onResetData, resetBusy } = useOutletContext();
   const [copyStatus, setCopyStatus] = useState('');
@@ -97,6 +97,14 @@ export default function UniverseUs() {
   async function sendTestAlert() {
     const result = await sendTestOnDeviceAlert();
     setNotificationMessage(result.ok ? 'Test notification sent to this device.' : (result.reason || 'Unable to send a test alert.'));
+  }
+
+  async function sendRealPushTest() {
+    setNotificationMessage('Requesting a Firebase push to your registered device…');
+    const result = await sendBackgroundPushTest(coupleId);
+    setNotificationMessage(result.delivered > 0
+      ? 'Firebase accepted the test push. Background the app to confirm your device displays it.'
+      : `Firebase did not deliver the test: ${result.reason || 'registration or transport error'}.`);
   }
 
   return (
@@ -182,6 +190,12 @@ export default function UniverseUs() {
                 <button type="button" onClick={sendTestAlert}
                   className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80">
                   Send test alert
+                </button>
+              ) : null}
+              {notificationStatus.enabled ? (
+                <button type="button" onClick={sendRealPushTest}
+                  className="min-h-11 rounded-xl border border-emerald-200/20 bg-emerald-200/5 px-4 py-2 text-xs text-emerald-100">
+                  Test Firebase push
                 </button>
               ) : null}
               <button type="button" onClick={checkAlerts} disabled={notificationChecking}
