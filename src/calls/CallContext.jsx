@@ -939,6 +939,12 @@ export function CallProvider({ children }) {
     return result;
   }
 
+  async function refreshCallNotificationStatus() {
+    const result = await refreshCallNotificationRegistration(coupleId, user);
+    setNotificationStatus(result);
+    return result;
+  }
+
   const value = useMemo(
     () => ({
       call: state,
@@ -956,6 +962,7 @@ export function CallProvider({ children }) {
       flipCamera,
       notificationStatus,
       enableCallNotifications,
+      refreshCallNotificationStatus,
     }),
     [state, incomingCall, partner, members.length, localStream, remoteStream, notificationStatus],
   );
