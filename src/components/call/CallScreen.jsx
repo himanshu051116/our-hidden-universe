@@ -115,7 +115,7 @@ export default function CallScreen() {
   const showConnectionWarning = Boolean(call.warning) && call.status !== CALL_STATUS.CONNECTED;
 
   return (
-    <div className="fixed inset-0 z-[75] overflow-hidden bg-[#020308]">
+    <div data-call-status={call.status} className="fixed inset-0 z-[75] overflow-hidden bg-[#020308]">
       {isAudioOnly && remoteStream ? (
         <audio ref={remoteRef} autoPlay playsInline aria-label="Partner audio" />
       ) : null}
