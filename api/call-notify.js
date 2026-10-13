@@ -1,3 +1,4 @@
+import { callDocumentPath } from '../src/services/callPaths.js';
 import { getAdminServices } from './_firebaseAdmin.js';
 
 function parseBody(body) {
@@ -69,7 +70,7 @@ export default async function handler(request, response) {
     const decoded = await auth.verifyIdToken(idToken);
 
     // Match the client signaling location until the deployed Firestore rules migrate to /calls.
-    const callRef = db.doc(`couples/${coupleId}/watchParty/${callId}`);
+    const callRef = db.doc(callDocumentPath(coupleId, callId));
     const callSnapshot = await callRef.get();
 
     if (!callSnapshot.exists) {
