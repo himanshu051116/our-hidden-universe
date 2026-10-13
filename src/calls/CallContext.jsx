@@ -358,7 +358,10 @@ export function CallProvider({ children }) {
       cleanupCallSignaling(coupleId, call.id).catch(() => {});
     }
 
-    await finishLocal(message, true);
+    await finishLocal(message, false);
+    // Keep the error visible until dismissed instead of auto-hiding after 1.4s.
+    stateRef.current = { ...initialCallState, status: CALL_STATUS.FAILED, error: message };
+    setState(stateRef.current);
   }
 
   async function performCallerIceRestart() {
@@ -894,7 +897,7 @@ export function CallProvider({ children }) {
       cleanupCallSignaling(coupleId, call.id).catch(() => {});
     }
 
-    await finishLocal('', true);
+    await finishLocal('', stateRef.current.status !== CALL_STATUS.FAILED);
   }
 
   function toggleMute() {
