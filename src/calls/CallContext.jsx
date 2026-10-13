@@ -90,6 +90,7 @@ export function CallProvider({ children }) {
   const remoteIceUnsubRef = useRef(null);
 
   const pendingCandidatesByRevisionRef = useRef(new Map());
+  const candidateWriteFailuresRef = useRef(0);
   const currentRevisionRef = useRef(0);
 
   const processedInitialAnswerRef = useRef(false);
@@ -273,7 +274,10 @@ export function CallProvider({ children }) {
       callId,
       remoteSide,
       (candidate) => handleRemoteCandidate(candidate).catch(() => {}),
-      () => {},
+      () => setState((previous) => ({
+        ...previous,
+        warning: 'Call network candidate updates were interrupted. Check Firebase connectivity.',
+      })),
     );
   }
 
@@ -331,6 +335,7 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
 
     pendingCandidatesByRevisionRef.current = new Map();
+    candidateWriteFailuresRef.current = 0;
     currentRevisionRef.current = 0;
     restartInFlightRef.current = false;
     processedInitialAnswerRef.current = false;
@@ -414,8 +419,17 @@ export function CallProvider({ children }) {
         restartInFlightRef.current = false;
         return;
       }
-      peer.setConfiguration({ ...peer.getConfiguration(), iceServers: freshConfig.iceServers });
-      setState((previous) => ({ ...previous, relayAvailable: freshConfig.relayAvailable, warning: freshConfig.warning }));
+      const retainRelay = !freshConfig.relayAvailable && stateRef.current.relayAvailable;
+      if (!retainRelay) {
+        peer.setConfiguration({ ...peer.getConfiguration(), iceServers: freshConfig.iceServers });
+      }
+      setState((previous) => ({
+        ...previous,
+        relayAvailable: retainRelay || freshConfig.relayAvailable,
+        warning: retainRelay
+          ? 'Could not refresh TURN credentials; trying the existing relay configuration.'
+          : freshConfig.warning,
+      }));
       peer.restartIce?.();
       const offer = await createAndSetOffer(peer, { iceRestart: true });
       await writeRestartOffer(coupleId, call.id, revision, offer);
@@ -522,6 +536,7 @@ export function CallProvider({ children }) {
     roleRef.current = localSide;
     currentRevisionRef.current = 0;
     pendingCandidatesByRevisionRef.current = new Map();
+    candidateWriteFailuresRef.current = 0;
     processedInitialAnswerRef.current = false;
     processedRestartOfferRef.current = 0;
     processedRestartAnswerRef.current = 0;
@@ -536,7 +551,15 @@ export function CallProvider({ children }) {
           localSide,
           candidate,
           currentRevisionRef.current,
-        ).catch(() => {}),
+        ).catch(() => {
+          candidateWriteFailuresRef.current += 1;
+          if (candidateWriteFailuresRef.current >= 2) {
+            setState((previous) => ({
+              ...previous,
+              warning: 'Unable to exchange network candidates through Firebase. Check connectivity and Firestore permissions.',
+            }));
+          }
+        }),
       onTrack: (stream) => {
         remoteStreamRef.current = stream;
         setRemoteStream(stream);
@@ -687,7 +710,10 @@ export function CallProvider({ children }) {
           await handleRestartAnswer(call);
         }
       },
-      () => {},
+      () => setState((previous) => ({
+        ...previous,
+        warning: 'Call signaling was interrupted. Reopen OHS and check your network connection.',
+      })),
     );
   }
 
