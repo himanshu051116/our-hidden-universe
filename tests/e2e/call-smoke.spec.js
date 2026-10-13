@@ -70,11 +70,17 @@ test.describe('OHS 1:1 call smoke', () => {
 
       await callee.getByRole('button', { name: 'Answer' }).click();
 
-      await expect(caller.getByRole('button', { name: 'End call' })).toBeVisible({ timeout: 40_000 });
-      await expect(callee.getByRole('button', { name: 'End call' })).toBeVisible({ timeout: 40_000 });
+      // Seeing an End call button is insufficient: it is visible while "Connecting".
+      await expect(caller.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 40_000 });
+      await expect(callee.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 40_000 });
 
-      await expect(caller.getByText(/quality/i)).toBeVisible();
-      await expect(callee.getByText(/quality/i)).toBeVisible();
+      // Confirm partner video tracks actually arrive, not just Firestore call status.
+      await expect.poll(() => callee.evaluate(() => Array.from(document.querySelectorAll('video'))
+        .some((element) => !element.muted && element.srcObject?.getVideoTracks()
+          .some((track) => track.readyState === 'live'))), { timeout: 15000 }).toBe(true);
+      await expect.poll(() => caller.evaluate(() => Array.from(document.querySelectorAll('video'))
+        .some((element) => !element.muted && element.srcObject?.getVideoTracks()
+          .some((track) => track.readyState === 'live'))), { timeout: 15000 }).toBe(true);
 
       await caller.getByRole('button', { name: 'End call' }).click();
 
@@ -132,4 +138,33 @@ test.describe('OHS 1:1 call smoke', () => {
       await calleeContext.close();
     }
   });
+  test('two authenticated members connect audio with a live remote track', async ({ browser }) => {
+    const contexts = await Promise.all([
+      browser.newContext({ permissions: ['microphone', 'camera'] }),
+      browser.newContext({ permissions: ['microphone', 'camera'] }),
+    ]);
+    const [caller, callee] = await Promise.all(contexts.map((context) => context.newPage()));
+    try {
+      await Promise.all([
+        login(caller, process.env.OHS_TEST_USER_A_EMAIL, process.env.OHS_TEST_USER_A_PASSWORD, process.env.OHS_TEST_COUPLE_CODE),
+        login(callee, process.env.OHS_TEST_USER_B_EMAIL, process.env.OHS_TEST_USER_B_PASSWORD, process.env.OHS_TEST_COUPLE_CODE),
+      ]);
+      await Promise.all([caller.goto('/universe/chat'), callee.goto('/universe/chat')]);
+      await caller.getByRole('button', { name: 'Start audio call' }).click();
+      await expect(callee.getByRole('dialog')).toBeVisible({ timeout: 15000 });
+      await callee.getByRole('button', { name: 'Answer' }).click();
+      await expect(caller.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 40000 });
+      await expect(callee.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 40000 });
+      for (const page of [caller, callee]) {
+        await expect.poll(() => page.evaluate(() => {
+          const element = document.querySelector('audio[aria-label="Partner audio"]');
+          return Boolean(element?.srcObject?.getAudioTracks().some((track) => track.readyState === 'live'));
+        }), { timeout: 15000 }).toBe(true);
+      }
+      await caller.getByRole('button', { name: 'End call' }).click();
+    } finally {
+      await Promise.all(contexts.map((context) => context.close()));
+    }
+  });
+
 });
