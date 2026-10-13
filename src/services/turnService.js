@@ -18,7 +18,7 @@ export async function resolveIceServers(coupleId) {
   try {
     const idToken = await auth.currentUser.getIdToken();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     let response;
     try {
       response = await fetch('/api/turn-credentials', {
