@@ -1,10 +1,10 @@
 import { auth, firebaseEnabled } from './firebase.js';
+import { validateIceServers } from './iceServerConfig.js';
 
 export const FALLBACK_ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
 ];
 
-import { validateIceServers } from './iceServerConfig.js';
 export async function resolveIceServers(coupleId) {
   if (!firebaseEnabled || !auth?.currentUser || !coupleId) {
     return {
