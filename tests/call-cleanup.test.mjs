@@ -44,3 +44,14 @@ test('timestamp-like Firestore objects can be classified', () => {
   }, now);
   assert.deepEqual(x, { remove: true, historyResult: 'failed' });
 });
+
+test('abandoned connected call is purged only after three days', () => {
+  const recent = classifyCallForCleanup({
+    _kind: 'call', status: 'connected', createdAt: before(2 * 24 * 60 * 60 * 1000),
+  }, now);
+  const abandoned = classifyCallForCleanup({
+    _kind: 'call', status: 'reconnecting', createdAt: before(4 * 24 * 60 * 60 * 1000),
+  }, now);
+  assert.equal(recent.remove, false);
+  assert.equal(abandoned.remove, true);
+});
