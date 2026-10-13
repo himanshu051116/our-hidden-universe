@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { issueCloudflareTurnCredentials, cloudflareTurnConfigured } from '../api/_cloudflareTurn.js';
-import { createCallPushMessage, safeNotificationOrigin } from '../api/_callPushPayload.js';
+import { createCallPushMessage, createPushTestMessage, safeNotificationOrigin } from '../api/_callPushPayload.js';
 
 test('TURN adapter requests short-lived ICE credentials only from the provider endpoint', async () => {
   let called;
@@ -71,4 +71,12 @@ test('untrusted origins cannot become notification deep-link domains', () => {
   assert.equal(safeNotificationOrigin('http://attacker.example'), 'https://ohs.vercel.app');
   assert.equal(safeNotificationOrigin('https://user:pass@attacker.example'), 'https://ohs.vercel.app');
   assert.equal(safeNotificationOrigin('https://himanshusibani.app/abc'), 'https://himanshusibani.app');
+});
+
+test('Firebase self-test message cannot masquerade as a real incoming call', () => {
+  const result = createPushTestMessage({ platform: 'web', targetType: 'fid', targetId: 'registered-fid' });
+  assert.equal(result.fid, 'registered-fid');
+  assert.equal(result.data.type, 'push_test');
+  assert.equal(result.notification, undefined);
+  assert.equal(result.webpush.headers.TTL, '60');
 });
