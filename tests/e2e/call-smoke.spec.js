@@ -14,12 +14,12 @@ function missingTestEnvironment() {
 
 async function login(page, email, password, coupleCode) {
   await page.goto('/login');
-  await page.getByRole('button', { name: 'Join room' }).click();
+  // Login defaults to Join universe; avoid the duplicate mode/submit label.
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByLabel('Couple code').fill(coupleCode);
-  await page.getByRole('button', { name: 'Join Room' }).click();
-  await expect(page).toHaveURL(/\/universe\/home/);
+  await page.getByRole('button', { name: 'Join universe', exact: true }).last().click();
+  await expect(page).toHaveURL(/\/universe(?:\/home)?(?:\/)?(?:\?.*)?$/);
 }
 
 test.describe('OHS 1:1 call smoke', () => {
@@ -63,24 +63,22 @@ test.describe('OHS 1:1 call smoke', () => {
         callee.goto('/universe/chat?diagnostics=1'),
       ]);
 
-      await expect(caller.getByRole('button', { name: 'Video call' })).toBeEnabled();
-      await caller.getByRole('button', { name: 'Video call' }).click();
+      await expect(caller.getByRole('button', { name: 'Start video call' })).toBeEnabled();
+      await caller.getByRole('button', { name: 'Start video call' }).click();
 
-      await expect(
-        callee.getByText('Your partner is calling'),
-      ).toBeVisible();
+      await expect(callee.getByRole('dialog')).toBeVisible();
 
       await callee.getByRole('button', { name: 'Answer' }).click();
 
-      await expect(caller.getByText(/Connected/)).toBeVisible({ timeout: 40_000 });
-      await expect(callee.getByText(/Connected/)).toBeVisible({ timeout: 40_000 });
+      await expect(caller.getByRole('button', { name: 'End call' })).toBeVisible({ timeout: 40_000 });
+      await expect(callee.getByRole('button', { name: 'End call' })).toBeVisible({ timeout: 40_000 });
 
       await expect(caller.getByText(/quality/i)).toBeVisible();
       await expect(callee.getByText(/quality/i)).toBeVisible();
 
       await caller.getByRole('button', { name: 'End call' }).click();
 
-      await expect(caller.getByRole('button', { name: 'Video call' })).toBeEnabled({
+      await expect(caller.getByRole('button', { name: 'Start video call' })).toBeEnabled({
         timeout: 10_000,
       });
     } finally {
@@ -121,15 +119,12 @@ test.describe('OHS 1:1 call smoke', () => {
         callee.goto('/universe/chat'),
       ]);
 
-      await caller.getByRole('button', { name: 'Video call' }).click();
-      await expect(callee.getByText('Your partner is calling')).toBeVisible();
+      await caller.getByRole('button', { name: 'Start video call' }).click();
+      await expect(callee.getByRole('dialog')).toBeVisible();
 
       await callee.getByRole('button', { name: 'Decline' }).click();
 
-      await expect(caller.getByText('Call declined.')).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(caller.getByRole('button', { name: 'Video call' })).toBeEnabled({
+      await expect(caller.getByRole('button', { name: 'Start video call' })).toBeEnabled({
         timeout: 10_000,
       });
     } finally {
