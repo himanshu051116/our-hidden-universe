@@ -2,6 +2,7 @@ import { ArrowRight, Bell, BellRing, Cake, DatabaseZap, Heart, Images, KeyRound,
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
+import { sendTestOnDeviceAlert } from '../services/callNotificationService.js';
 import CallReadinessCard from '../components/call/CallReadinessCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -93,6 +94,11 @@ export default function UniverseUs() {
     }
   }
 
+  async function sendTestAlert() {
+    const result = await sendTestOnDeviceAlert();
+    setNotificationMessage(result.ok ? 'Test notification sent to this device.' : (result.reason || 'Unable to send a test alert.'));
+  }
+
   return (
     <div className="space-y-5">
       <section className="px-1 sm:px-0">
@@ -172,6 +178,12 @@ export default function UniverseUs() {
               >
                 {notificationBusy ? 'Requesting…' : notificationStatus.backgroundReady ? 'Register background alerts' : 'Allow device alerts'}
               </button>
+              {notificationStatus.foregroundEnabled && notificationStatus.platform === 'web' ? (
+                <button type="button" onClick={sendTestAlert}
+                  className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80">
+                  Send test alert
+                </button>
+              ) : null}
               <button type="button" onClick={checkAlerts} disabled={notificationChecking}
                 className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80 disabled:opacity-45">
                 {notificationChecking ? 'Checking…' : 'Refresh status'}
