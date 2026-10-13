@@ -68,7 +68,8 @@ export default async function handler(request, response) {
     const { auth, db, messaging } = getAdminServices();
     const decoded = await auth.verifyIdToken(idToken);
 
-    const callRef = db.doc(`couples/${coupleId}/calls/${callId}`);
+    // Match the client signaling location until the deployed Firestore rules migrate to /calls.
+    const callRef = db.doc(`couples/${coupleId}/watchParty/${callId}`);
     const callSnapshot = await callRef.get();
 
     if (!callSnapshot.exists) {
@@ -77,6 +78,11 @@ export default async function handler(request, response) {
     }
 
     const call = callSnapshot.data();
+
+    if (call?._kind !== 'call') {
+      response.status(404).json({ error: 'Call not found.' });
+      return;
+    }
 
     if (call.callerId !== decoded.uid) {
       response.status(403).json({ error: 'Only the caller may notify this call.' });
