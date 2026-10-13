@@ -1,3 +1,4 @@
+import { callCollectionPath, callDocumentPath } from './callPaths.js';
 import {
   addDoc,
   collection,
@@ -22,8 +23,8 @@ export const RING_TIMEOUT_MS = 30_000;
 // to room members in both legacy and V5 rules, while the watch-party feature
 // itself only uses watchParty/current. Call documents therefore live in this
 // collection with a private _kind discriminator until the V5 rules are deployed.
-const signalingPath = (coupleId) => collection(db, 'couples', coupleId, 'watchParty');
-const callRef = (coupleId, callId) => doc(db, 'couples', coupleId, 'watchParty', callId);
+const signalingPath = (coupleId) => collection(db, callCollectionPath(coupleId));
+const callRef = (coupleId, callId) => doc(db, callDocumentPath(coupleId, callId));
 
 function toMillis(value) {
   if (!value) return 0;
