@@ -56,7 +56,7 @@ export default function UniverseUs() {
   }
 
   async function enableAlerts() {
-    if (notificationBusy || notificationStatus.enabled || notificationStatus.foregroundEnabled) return;
+    if (notificationBusy || notificationStatus.enabled || (notificationStatus.foregroundEnabled && !notificationStatus.backgroundReady)) return;
     setNotificationBusy(true);
     setNotificationMessage('');
     try {
@@ -164,10 +164,10 @@ export default function UniverseUs() {
               <button
                 type="button"
                 onClick={enableAlerts}
-                disabled={notificationBusy || notificationStatus.enabled || notificationStatus.foregroundEnabled || notificationStatus.status === 'blocked'}
+                disabled={notificationBusy || notificationStatus.enabled || (notificationStatus.foregroundEnabled && !notificationStatus.backgroundReady) || notificationStatus.status === 'blocked' || (notificationStatus.platform !== 'web' && !notificationStatus.backgroundReady)}
                 className="min-h-11 rounded-xl border border-blush/30 bg-blush/10 px-4 py-2 text-xs font-semibold text-white disabled:opacity-45"
               >
-                {notificationBusy ? 'Requesting…' : 'Allow device alerts'}
+                {notificationBusy ? 'Requesting…' : notificationStatus.backgroundReady ? 'Register background alerts' : 'Allow device alerts'}
               </button>
               <button type="button" onClick={checkAlerts} disabled={notificationChecking}
                 className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80 disabled:opacity-45">
