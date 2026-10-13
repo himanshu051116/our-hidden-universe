@@ -26,6 +26,7 @@ import {
   refreshCallNotificationRegistration,
   sendIncomingCallPush,
   showIncomingCallAlert,
+  dismissIncomingCallAlert,
 } from '../services/callNotificationService.js';
 import {
   acquireLocalMedia,
@@ -101,6 +102,7 @@ export function CallProvider({ children }) {
   const startLockRef = useRef(false);
   const answerLockRef = useRef(false);
   const ringTimerRef = useRef(null);
+  const incomingExpiryTimerRef = useRef(null);
   const finishLockRef = useRef(false);
   const diagnosticsTimerRef = useRef(null);
   const diagnosticsPreviousRef = useRef(null);
@@ -154,6 +156,8 @@ export function CallProvider({ children }) {
       user.uid,
       (call) => {
         if (!call) {
+          clearTimeout(incomingExpiryTimerRef.current);
+          if (activeCallRef.current?.id) dismissIncomingCallAlert(activeCallRef.current.id).catch(() => {});
           if (stateRef.current.status === CALL_STATUS.INCOMING_RINGING) {
             setIncomingCall(null);
             setState(initialCallState);
@@ -170,6 +174,15 @@ export function CallProvider({ children }) {
 
         activeCallRef.current = call;
         setIncomingCall(call);
+        clearTimeout(incomingExpiryTimerRef.current);
+        const expiryDelay = Math.max(0, (millis(call.expiresAt) || Date.now() + RING_TIMEOUT_MS) - Date.now());
+        incomingExpiryTimerRef.current = window.setTimeout(() => {
+          if (activeCallRef.current?.id !== call.id || stateRef.current.status !== CALL_STATUS.INCOMING_RINGING) return;
+          dismissIncomingCallAlert(call.id).catch(() => {});
+          setIncomingCall(null);
+          activeCallRef.current = null;
+          setState(initialCallState);
+        }, expiryDelay);
         const name = roomMembers.find((member) => member.id === call.callerId)?.displayName || 'Your partner';
         showIncomingCallAlert({ ...call, coupleId }, name).catch(() => {});
         setState((previous) => ({
@@ -192,6 +205,7 @@ export function CallProvider({ children }) {
       clearTimeout(reconnectTimerRef.current);
       clearTimeout(connectTimerRef.current);
       clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingExpiryTimerRef.current);
       clearInterval(diagnosticsTimerRef.current);
       callUnsubRef.current?.();
       remoteIceUnsubRef.current?.();
@@ -292,6 +306,8 @@ export function CallProvider({ children }) {
     clearTimeout(reconnectTimerRef.current);
     clearTimeout(connectTimerRef.current);
     clearTimeout(ringTimerRef.current);
+    clearTimeout(incomingExpiryTimerRef.current);
+    if (activeCallRef.current?.id) dismissIncomingCallAlert(activeCallRef.current.id).catch(() => {});
     clearInterval(diagnosticsTimerRef.current);
     diagnosticsTimerRef.current = null;
     diagnosticsPreviousRef.current = null;
@@ -835,6 +851,9 @@ export function CallProvider({ children }) {
       observeRemoteCandidates(call.id, 'caller');
       observeCall(call.id, 'callee');
 
+      if (call.expiresAt && millis(call.expiresAt) <= Date.now()) {
+        throw new Error('This incoming call has expired. Ask your partner to call again.');
+      }
       await applyRemoteDescription(peer, call.offer);
       await flushRemoteCandidates(0);
 
@@ -848,6 +867,8 @@ export function CallProvider({ children }) {
         startedAt: millis(call.createdAt) || Date.now(),
       }));
       setIncomingCall(null);
+      clearTimeout(incomingExpiryTimerRef.current);
+      dismissIncomingCallAlert(call.id).catch(() => {});
     } catch (error) {
       // A media/SDP failure must not leave the camera and microphone running.
       remoteIceUnsubRef.current?.();
@@ -859,9 +880,16 @@ export function CallProvider({ children }) {
       stopMediaStream(localStreamRef.current);
       localStreamRef.current = null;
       setLocalStream(null);
+      const expired = call.expiresAt && millis(call.expiresAt) <= Date.now();
+      if (expired) {
+        clearTimeout(incomingExpiryTimerRef.current);
+        dismissIncomingCallAlert(call.id).catch(() => {});
+        setIncomingCall(null);
+        activeCallRef.current = null;
+      }
       setState((previous) => ({
         ...previous,
-        status: CALL_STATUS.INCOMING_RINGING,
+        status: expired ? CALL_STATUS.FAILED : CALL_STATUS.INCOMING_RINGING,
         error: error?.message || 'Unable to answer the call. Please retry.',
       }));
     } finally {
