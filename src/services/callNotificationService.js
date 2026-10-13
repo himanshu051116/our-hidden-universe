@@ -123,6 +123,12 @@ async function ensureNativeListeners() {
 }
 
 async function registerNative(coupleId, user, requestPermission) {
+  // Capacitor iOS supplies an APNs token, not an FCM token. This app has not
+  // configured the Firebase native iOS Messaging adapter, so don't store it
+  // as an FCM token that the Admin API cannot deliver to.
+  if (Capacitor.getPlatform() !== 'android') {
+    return { enabled: false, status: 'native-provider-unconfigured', platform: Capacitor.getPlatform() };
+  }
   nativeRegistrationContext = { coupleId, user };
   await ensureNativeListeners();
 
@@ -291,6 +297,10 @@ export async function getCallNotificationReadiness(coupleId, user) {
   let permission = 'unsupported';
   let supported = false;
   if (native) {
+    if (Capacitor.getPlatform() !== 'android') {
+      return { enabled: false, status: 'native-provider-unconfigured', canEnable: false, serverReady: false,
+        foregroundEnabled: false, backgroundReady: false, platform: Capacitor.getPlatform() };
+    }
     const result = await PushNotifications.checkPermissions();
     permission = result.receive;
     supported = true;
