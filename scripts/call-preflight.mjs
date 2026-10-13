@@ -23,8 +23,6 @@ const serverEnv = [
   'FIREBASE_ADMIN_PROJECT_ID',
   'FIREBASE_ADMIN_CLIENT_EMAIL',
   'FIREBASE_ADMIN_PRIVATE_KEY',
-  'TURN_URLS',
-  'TURN_SHARED_SECRET',
   'CRON_SECRET',
 ];
 
@@ -61,6 +59,12 @@ else {
 for (const key of serverEnv) {
   mark(process.env[key] ? 'PASS' : 'WARN', `${key} ${process.env[key] ? 'is set' : 'not present in this shell'}`);
 }
+
+const cfReady = Boolean(process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN);
+const coturnReady = Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET);
+mark(cfReady || coturnReady ? 'PASS' : 'WARN',
+  cfReady ? 'Cloudflare TURN credentials configured' : coturnReady
+    ? 'coturn REST credentials configured' : 'No TURN provider credentials present in this shell');
 
 for (const key of clientEnv) {
   mark(process.env[key] ? 'PASS' : 'WARN', `${key} ${process.env[key] ? 'is set' : 'not present in this shell'}`);

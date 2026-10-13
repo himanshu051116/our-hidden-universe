@@ -35,25 +35,26 @@ if (messagingConfigured) {
   const messaging = getMessaging(firebaseApp);
 
   onBackgroundMessage(messaging, async (payload) => {
+    // Notification payloads are displayed automatically by FCM; custom display
+    // is reserved for data-only web pushes to avoid duplicates.
     if (payload.notification) return;
-
     const data = payload.data || {};
-    if (data.type !== 'incoming_call') return;
-
-    const title = data.callType === 'audio' ? 'Incoming audio call' : 'Incoming video call';
+    if (data.type !== 'incoming_call' && data.type !== 'push_test') return;
+    const test = data.type === 'push_test';
+    const title = test ? 'OHS background alert test'
+      : data.callType === 'audio' ? 'Incoming audio call' : 'Incoming video call';
     const callerName = data.callerName || 'Your partner';
-    const target = `/universe/chat?callId=${encodeURIComponent(data.callId || '')}`;
-
+    const target = test ? '/universe/us'
+      : `/universe/chat?callId=${encodeURIComponent(data.callId || '')}`;
     await self.registration.showNotification(title, {
-      body: `${callerName} is calling you.`,
-      tag: `ohu-call-${data.callId || 'incoming'}`,
+      body: test ? 'Firebase delivered this test alert to your device.'
+        : `${callerName} is calling you.`,
+      tag: test ? 'ohu-push-test' : `ohu-call-${data.callId || 'incoming'}`,
       renotify: true,
-      requireInteraction: true,
+      requireInteraction: !test,
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      data: {
-        url: target,
-      },
+      data: { url: target },
     });
   });
 }

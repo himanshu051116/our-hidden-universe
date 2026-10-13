@@ -15,6 +15,7 @@ const deviceIdKey = 'ohu-call-device-id';
 
 let nativeListenersReady = false;
 let nativeRegistrationContext = null;
+let nativeRegistrationWaiter = null;
 let nativeHandles = [];
 let webRegistrationUnsubscribe = null;
 let webUnregistrationUnsubscribe = null;
@@ -98,13 +99,12 @@ async function ensureNativeListeners() {
       const context = nativeRegistrationContext;
       if (!context?.coupleId || !context?.user?.uid) return;
 
-      await saveRegistration(
-        context.coupleId,
-        context.user,
-        registration.value,
-        'token',
-        Capacitor.getPlatform(),
-      ).catch(() => {});
+      try {
+        await saveRegistration(context.coupleId, context.user, registration.value, 'token', Capacitor.getPlatform());
+        nativeRegistrationWaiter?.resolve({ enabled: true, status: 'enabled', platform: Capacitor.getPlatform(), targetType: 'token' });
+      } catch {
+        nativeRegistrationWaiter?.resolve({ enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token' });
+      }
     }),
   );
 
@@ -116,11 +116,19 @@ async function ensureNativeListeners() {
   );
 
   nativeHandles.push(
-    await PushNotifications.addListener('registrationError', () => {}),
+    await PushNotifications.addListener('registrationError', () => {
+      nativeRegistrationWaiter?.resolve({ enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token' });
+    }),
   );
 }
 
 async function registerNative(coupleId, user, requestPermission) {
+  // Capacitor iOS supplies an APNs token, not an FCM token. This app has not
+  // configured the Firebase native iOS Messaging adapter, so don't store it
+  // as an FCM token that the Admin API cannot deliver to.
+  if (Capacitor.getPlatform() !== 'android') {
+    return { enabled: false, status: 'native-provider-unconfigured', platform: Capacitor.getPlatform() };
+  }
   nativeRegistrationContext = { coupleId, user };
   await ensureNativeListeners();
 
@@ -148,14 +156,24 @@ async function registerNative(coupleId, user, requestPermission) {
     };
   }
 
-  await PushNotifications.register();
-
-  return {
-    enabled: true,
-    status: 'enabled',
-    platform: Capacitor.getPlatform(),
-    targetType: 'token',
-  };
+  // The OS registration event and Firestore device write determine success,
+  // not merely the return of PushNotifications.register().
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      if (nativeRegistrationWaiter?.resolve === settle) settle({
+        enabled: false, status: 'registration-timeout', platform: Capacitor.getPlatform(), targetType: 'token',
+      });
+    }, 12000);
+    const settle = (result) => {
+      window.clearTimeout(timeout);
+      if (nativeRegistrationWaiter?.resolve === settle) nativeRegistrationWaiter = null;
+      resolve(result);
+    };
+    nativeRegistrationWaiter = { resolve: settle };
+    PushNotifications.register().catch(() => settle({
+      enabled: false, status: 'registration-failed', platform: Capacitor.getPlatform(), targetType: 'token',
+    }));
+  });
 }
 
 async function showForegroundCallNotification(serviceWorkerRegistration, payload) {
@@ -268,89 +286,168 @@ async function registerWeb(coupleId, user, requestPermission) {
   };
 }
 
+// Permission for on-device notifications is independent of FCM/server readiness.
+// Foreground Firestore ringing still works when background push cannot be configured.
 export async function getCallNotificationReadiness(coupleId, user) {
   if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { status: 'unavailable', canEnable: false, serverReady: false };
+    return { enabled: false, status: 'unavailable', canEnable: false, serverReady: false, foregroundEnabled: false };
   }
 
+  const native = Capacitor.isNativePlatform();
+  let permission = 'unsupported';
+  let supported = false;
+  if (native) {
+    if (Capacitor.getPlatform() !== 'android') {
+      return { enabled: false, status: 'native-provider-unconfigured', canEnable: false, serverReady: false,
+        foregroundEnabled: false, backgroundReady: false, platform: Capacitor.getPlatform() };
+    }
+    const result = await PushNotifications.checkPermissions();
+    permission = result.receive;
+    supported = true;
+  } else {
+    supported = typeof window !== 'undefined' && 'Notification' in window;
+    permission = supported ? Notification.permission : 'unsupported';
+  }
+
+  const foregroundEnabled = !native && supported && permission === 'granted';
   const server = await fetchNotificationServerHealth();
-  if (!server.serverReady) {
-    return { status: 'server-unavailable', canEnable: false, serverReady: false };
-  }
+  const vapidReady = native || Boolean(import.meta.env.VITE_FIREBASE_VAPID_KEY);
+  const messagingSupported = native || (
+    supported && 'serviceWorker' in navigator && await isSupported().catch(() => false)
+  );
+  const backgroundReady = server.serverReady && vapidReady && messagingSupported;
 
-  if (Capacitor.isNativePlatform()) {
-    const permission = await PushNotifications.checkPermissions();
-    const status = permission.receive === 'granted'
-      ? 'ready'
-      : permission.receive === 'denied'
-        ? 'blocked'
-        : 'prompt';
-    return {
-      status,
-      canEnable: status === 'ready' || status === 'prompt',
-      serverReady: true,
-      platform: Capacitor.getPlatform(),
-      permission: permission.receive,
-    };
-  }
+  const status = !supported ? 'unsupported'
+    : permission === 'denied' ? 'blocked'
+      : !backgroundReady ? (foregroundEnabled ? 'foreground-only' : 'background-unavailable')
+        : permission === 'granted' ? 'ready' : 'prompt';
 
-  if (!('Notification' in window) || !('serviceWorker' in navigator) || !(await isSupported())) {
-    return { status: 'unsupported', canEnable: false, serverReady: true, platform: 'web' };
-  }
-
-  if (!import.meta.env.VITE_FIREBASE_VAPID_KEY) {
-    return { status: 'misconfigured', canEnable: false, serverReady: true, platform: 'web' };
-  }
-
-  const permission = Notification.permission;
-  const status = permission === 'granted' ? 'ready' : permission === 'denied' ? 'blocked' : 'prompt';
   return {
+    enabled: false,
     status,
-    canEnable: status === 'ready' || status === 'prompt',
-    serverReady: true,
-    platform: 'web',
+    canEnable: backgroundReady && permission !== 'denied',
+    serverReady: server.serverReady,
+    foregroundEnabled,
+    backgroundReady,
+    platform: native ? Capacitor.getPlatform() : 'web',
     permission,
   };
 }
 
+export async function requestOnDeviceCallAlerts() {
+  if (Capacitor.isNativePlatform()) {
+    // Native OS push requires a configured FCM server; do not ask for an unusable permission.
+    return { foregroundEnabled: false, status: 'background-unavailable' };
+  }
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return { foregroundEnabled: false, status: 'unsupported' };
+  }
+  let permission = Notification.permission;
+  if (permission === 'default') permission = await Notification.requestPermission();
+  return {
+    foregroundEnabled: permission === 'granted',
+    status: permission === 'granted' ? 'foreground-only' : permission === 'denied' ? 'blocked' : 'prompt',
+  };
+}
+
+const alertedCalls = new Set();
+export async function showIncomingCallAlert(call, callerName = 'Your partner') {
+  if (!call?.id || typeof window === 'undefined' || document.visibilityState === 'visible') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (alertedCalls.has(call.id)) return;
+  alertedCalls.add(call.id);
+  if (alertedCalls.size > 30) alertedCalls.delete(alertedCalls.values().next().value);
+
+  const title = call.type === 'audio' ? 'Incoming audio call' : 'Incoming video call';
+  const options = {
+    body: `${callerName} is calling you.`,
+    tag: `ohu-call-${call.id}`,
+    icon: '/icon-192.png',
+    data: { url: `/universe/chat?callId=${encodeURIComponent(call.id)}` },
+  };
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    if (registration?.showNotification) {
+      await registration.showNotification(title, { ...options, requireInteraction: true, renotify: true });
+    } else {
+      const notification = new Notification(title, options);
+      notification.onclick = () => {
+        window.focus();
+        emitCallOpen({ type: 'incoming_call', coupleId: call.coupleId, callId: call.id });
+        notification.close();
+      };
+    }
+  } catch {
+    alertedCalls.delete(call.id);
+  }
+}
+
+export async function sendTestOnDeviceAlert() {
+  if (Capacitor.isNativePlatform()) {
+    return { ok: false, reason: 'Native notification testing requires configured push delivery.' };
+  }
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return { ok: false, reason: 'Allow notifications for this site first.' };
+  }
+  const options = {
+    body: 'Device alerts are permitted while OHS is running.',
+    tag: 'ohu-notification-test',
+    icon: '/icon-192.png',
+  };
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    if (registration?.showNotification) {
+      await registration.showNotification('OHS notification test', options);
+    } else {
+      new Notification('OHS notification test', options);
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'This browser could not display an OS notification.' };
+  }
+}
+
+export async function dismissIncomingCallAlert(callId) {
+  if (!callId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  alertedCalls.delete(callId);
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const notifications = await registration?.getNotifications?.({ tag: `ohu-call-${callId}` });
+    (notifications || []).forEach((notification) => notification.close());
+  } catch {
+    // Closing a notification is best-effort and never blocks the call.
+  }
+}
+
 export async function enableCallNotifications(coupleId, user) {
   if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { enabled: false, status: 'unavailable', platform: 'unknown', targetType: 'unknown' };
+    return { enabled: false, status: 'unavailable', foregroundEnabled: false };
   }
-
   const readiness = await getCallNotificationReadiness(coupleId, user);
-  if (!readiness.canEnable) {
-    return {
-      enabled: false,
-      status: readiness.status,
-      platform: readiness.platform || 'unknown',
-      targetType: Capacitor.isNativePlatform() ? 'token' : 'fid',
-    };
+  if (!readiness.backgroundReady) {
+    const local = await requestOnDeviceCallAlerts();
+    return { ...readiness, ...local, enabled: false };
   }
-
-  return Capacitor.isNativePlatform()
-    ? registerNative(coupleId, user, true)
-    : registerWeb(coupleId, user, true);
+  if (!readiness.canEnable) return { ...readiness, enabled: false };
+  const result = Capacitor.isNativePlatform()
+    ? await registerNative(coupleId, user, true)
+    : await registerWeb(coupleId, user, true);
+  return { ...readiness, ...result, foregroundEnabled: result.enabled || readiness.foregroundEnabled };
 }
 
 export async function refreshCallNotificationRegistration(coupleId, user) {
-  if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { enabled: false, status: 'unavailable', platform: 'unknown', targetType: 'unknown' };
-  }
-
   const readiness = await getCallNotificationReadiness(coupleId, user);
-  if (!readiness.canEnable || readiness.status === 'prompt') {
-    return {
-      enabled: false,
-      status: readiness.status,
-      platform: readiness.platform || 'unknown',
-      targetType: Capacitor.isNativePlatform() ? 'token' : 'fid',
-    };
+  if (!readiness.backgroundReady || !readiness.canEnable || readiness.permission !== 'granted') {
+    return readiness;
   }
-
-  return Capacitor.isNativePlatform()
-    ? registerNative(coupleId, user, false)
-    : registerWeb(coupleId, user, false);
+  try {
+    const result = Capacitor.isNativePlatform()
+      ? await registerNative(coupleId, user, false)
+      : await registerWeb(coupleId, user, false);
+    return { ...readiness, ...result, foregroundEnabled: result.enabled || readiness.foregroundEnabled };
+  } catch {
+    return { ...readiness, enabled: false, status: 'registration-failed' };
+  }
 }
 
 export async function removeCurrentCallNotificationRegistration(coupleId, user) {
@@ -384,11 +481,35 @@ export async function sendIncomingCallPush(coupleId, callId) {
   };
 }
 
+export async function sendBackgroundPushTest(coupleId) {
+  if (!coupleId || !auth?.currentUser) return { ok: false, delivered: 0, reason: 'not-signed-in' };
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch('/api/call-push-test', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: JSON.stringify({ coupleId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    return {
+      ok: response.ok,
+      delivered: Number(body.delivered || 0),
+      failed: Number(body.failed || 0),
+      reason: body.reason || body.error || (response.ok ? '' : 'delivery-failed'),
+    };
+  } catch {
+    return { ok: false, delivered: 0, reason: 'server-unreachable' };
+  }
+}
+
 export function disposeNativeCallNotificationListeners() {
   nativeHandles.forEach((handle) => handle?.remove?.());
   nativeHandles = [];
   nativeListenersReady = false;
   nativeRegistrationContext = null;
+  nativeRegistrationWaiter = null;
 
   webRegistrationUnsubscribe?.();
   webUnregistrationUnsubscribe?.();

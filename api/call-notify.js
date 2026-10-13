@@ -1,3 +1,5 @@
+import { createCallPushMessage, safeNotificationOrigin } from './_callPushPayload.js';
+import { callDocumentPath } from '../src/services/callPaths.js';
 import { getAdminServices } from './_firebaseAdmin.js';
 
 function parseBody(body) {
@@ -16,23 +18,12 @@ function normalizedRoom(value) {
   return String(value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
-function absoluteCallLink(request, callId) {
-  const protocol = request.headers['x-forwarded-proto'] || 'https';
-  const host = request.headers.host;
-  return `${protocol}://${host}/universe/chat?callId=${encodeURIComponent(callId)}`;
-}
-
 function staleTargetCode(code = '') {
   const value = String(code);
   return value.includes('registration-token-not-registered')
     || value.includes('invalid-registration-token')
     || value.includes('not-found')
     || value.includes('invalid-argument');
-}
-
-function targetFor(device) {
-  if (device.targetType === 'fid') return { fid: device.targetId };
-  return { token: device.targetId };
 }
 
 function memberName(snapshot) {
@@ -68,7 +59,8 @@ export default async function handler(request, response) {
     const { auth, db, messaging } = getAdminServices();
     const decoded = await auth.verifyIdToken(idToken);
 
-    const callRef = db.doc(`couples/${coupleId}/calls/${callId}`);
+    // Match the client signaling location until the deployed Firestore rules migrate to /calls.
+    const callRef = db.doc(callDocumentPath(coupleId, callId));
     const callSnapshot = await callRef.get();
 
     if (!callSnapshot.exists) {
@@ -77,6 +69,11 @@ export default async function handler(request, response) {
     }
 
     const call = callSnapshot.data();
+
+    if (call?._kind !== 'call') {
+      response.status(404).json({ error: 'Call not found.' });
+      return;
+    }
 
     if (call.callerId !== decoded.uid) {
       response.status(403).json({ error: 'Only the caller may notify this call.' });
@@ -113,7 +110,8 @@ export default async function handler(request, response) {
       .filter((device) =>
         typeof device.targetId === 'string'
         && device.targetId.length > 10
-        && (device.targetType === 'fid' || device.targetType === 'token'),
+        && (device.targetType === 'fid' || device.targetType === 'token')
+        && (device.platform === 'web' || device.platform === 'android'),
       );
 
     if (!devices.length) {
@@ -121,64 +119,13 @@ export default async function handler(request, response) {
       return;
     }
 
-    const link = absoluteCallLink(request, callId);
-    const callType = call.type === 'audio' ? 'audio' : 'video';
     const callerName = memberName(callerMember);
-    const title = callType === 'audio' ? 'Incoming audio call' : 'Incoming video call';
-    const body = `${callerName} is calling you.`;
-    const expiresUnix = String(Math.floor(Date.now() / 1000) + 30);
-
-    const messages = devices.map((device) => ({
-      ...targetFor(device),
-      notification: {
-        title,
-        body,
-      },
-      data: {
-        type: 'incoming_call',
-        coupleId,
-        callId,
-        callType,
-        callerName,
-      },
-      android: {
-        priority: 'high',
-        ttl: 30000,
-        notification: {
-          channelId: 'calls',
-          tag: `ohu-call-${callId}`,
-          sound: 'default',
-        },
-      },
-      apns: {
-        headers: {
-          'apns-priority': '10',
-          'apns-expiration': expiresUnix,
-        },
-        payload: {
-          aps: {
-            sound: 'default',
-            category: 'incoming_call',
-          },
-        },
-      },
-      webpush: {
-        headers: {
-          TTL: '30',
-          Urgency: 'high',
-        },
-        fcmOptions: {
-          link,
-        },
-        notification: {
-          tag: `ohu-call-${callId}`,
-          requireInteraction: true,
-          renotify: true,
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-        },
-      },
-    }));
+    const messages = devices.map((device) => createCallPushMessage(
+      device,
+      { id: callId, coupleId, type: call.type },
+      callerName,
+      safeNotificationOrigin(process.env.PUBLIC_SITE_ORIGIN),
+    ));
 
     const result = await messaging.sendEach(messages);
 

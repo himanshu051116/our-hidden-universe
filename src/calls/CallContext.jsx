@@ -25,6 +25,8 @@ import {
   enableCallNotifications as enableCallNotificationsService,
   refreshCallNotificationRegistration,
   sendIncomingCallPush,
+  showIncomingCallAlert,
+  dismissIncomingCallAlert,
 } from '../services/callNotificationService.js';
 import {
   acquireLocalMedia,
@@ -49,6 +51,8 @@ const CallContext = createContext(null);
 const MAX_RESTART_ATTEMPTS = 2;
 const RECONNECT_DELAY_MS = 2500;
 const RING_TIMEOUT_MS = 30_000;
+const CONNECT_TIMEOUT_MS = 25_000;
+const RECOVERY_TIMEOUT_MS = 35_000;
 
 function millis(value) {
   if (!value) return 0;
@@ -87,6 +91,7 @@ export function CallProvider({ children }) {
   const remoteIceUnsubRef = useRef(null);
 
   const pendingCandidatesByRevisionRef = useRef(new Map());
+  const candidateWriteFailuresRef = useRef(0);
   const currentRevisionRef = useRef(0);
 
   const processedInitialAnswerRef = useRef(false);
@@ -95,7 +100,12 @@ export function CallProvider({ children }) {
   const restartInFlightRef = useRef(false);
 
   const reconnectTimerRef = useRef(null);
+  const recoveryDeadlineRef = useRef(null);
+  const connectTimerRef = useRef(null);
+  const startLockRef = useRef(false);
+  const answerLockRef = useRef(false);
   const ringTimerRef = useRef(null);
+  const incomingExpiryTimerRef = useRef(null);
   const finishLockRef = useRef(false);
   const diagnosticsTimerRef = useRef(null);
   const diagnosticsPreviousRef = useRef(null);
@@ -149,6 +159,8 @@ export function CallProvider({ children }) {
       user.uid,
       (call) => {
         if (!call) {
+          clearTimeout(incomingExpiryTimerRef.current);
+          if (activeCallRef.current?.id) dismissIncomingCallAlert(activeCallRef.current.id).catch(() => {});
           if (stateRef.current.status === CALL_STATUS.INCOMING_RINGING) {
             setIncomingCall(null);
             setState(initialCallState);
@@ -165,6 +177,17 @@ export function CallProvider({ children }) {
 
         activeCallRef.current = call;
         setIncomingCall(call);
+        clearTimeout(incomingExpiryTimerRef.current);
+        const expiryDelay = Math.max(0, (millis(call.expiresAt) || Date.now() + RING_TIMEOUT_MS) - Date.now());
+        incomingExpiryTimerRef.current = window.setTimeout(() => {
+          if (activeCallRef.current?.id !== call.id || stateRef.current.status !== CALL_STATUS.INCOMING_RINGING) return;
+          dismissIncomingCallAlert(call.id).catch(() => {});
+          setIncomingCall(null);
+          activeCallRef.current = null;
+          setState(initialCallState);
+        }, expiryDelay);
+        const name = roomMembers.find((member) => member.id === call.callerId)?.displayName || 'Your partner';
+        showIncomingCallAlert({ ...call, coupleId }, name).catch(() => {});
         setState((previous) => ({
           ...previous,
           status: CALL_STATUS.INCOMING_RINGING,
@@ -183,7 +206,10 @@ export function CallProvider({ children }) {
   useEffect(
     () => () => {
       clearTimeout(reconnectTimerRef.current);
+      clearTimeout(recoveryDeadlineRef.current);
+      clearTimeout(connectTimerRef.current);
       clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingExpiryTimerRef.current);
       clearInterval(diagnosticsTimerRef.current);
       callUnsubRef.current?.();
       remoteIceUnsubRef.current?.();
@@ -232,10 +258,9 @@ export function CallProvider({ children }) {
     if (!peerRef.current) return;
 
     const revision = Number(record?.revision || 0);
-    if (
-      revision !== currentRevisionRef.current
-      || !peerRef.current.remoteDescription
-    ) {
+    // Older revisions can never become valid again after an ICE restart.
+    if (revision < currentRevisionRef.current) return;
+    if (revision > currentRevisionRef.current || !peerRef.current.remoteDescription) {
       queueCandidate(record);
       return;
     }
@@ -251,7 +276,10 @@ export function CallProvider({ children }) {
       callId,
       remoteSide,
       (candidate) => handleRemoteCandidate(candidate).catch(() => {}),
-      () => {},
+      () => setState((previous) => ({
+        ...previous,
+        warning: 'Call network candidate updates were interrupted. Check Firebase connectivity.',
+      })),
     );
   }
 
@@ -282,7 +310,11 @@ export function CallProvider({ children }) {
     finishLockRef.current = true;
 
     clearTimeout(reconnectTimerRef.current);
+    clearTimeout(recoveryDeadlineRef.current);
+    clearTimeout(connectTimerRef.current);
     clearTimeout(ringTimerRef.current);
+    clearTimeout(incomingExpiryTimerRef.current);
+    if (activeCallRef.current?.id) dismissIncomingCallAlert(activeCallRef.current.id).catch(() => {});
     clearInterval(diagnosticsTimerRef.current);
     diagnosticsTimerRef.current = null;
     diagnosticsPreviousRef.current = null;
@@ -306,12 +338,15 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
 
     pendingCandidatesByRevisionRef.current = new Map();
+    candidateWriteFailuresRef.current = 0;
     currentRevisionRef.current = 0;
     restartInFlightRef.current = false;
     processedInitialAnswerRef.current = false;
     processedRestartOfferRef.current = 0;
     processedRestartAnswerRef.current = 0;
     activeCallRef.current = null;
+    startLockRef.current = false;
+    answerLockRef.current = false;
 
     const next = {
       ...initialCallState,
@@ -347,7 +382,10 @@ export function CallProvider({ children }) {
       cleanupCallSignaling(coupleId, call.id).catch(() => {});
     }
 
-    await finishLocal(message, true);
+    await finishLocal(message, false);
+    // Keep the error visible until dismissed instead of auto-hiding after 1.4s.
+    stateRef.current = { ...initialCallState, status: CALL_STATUS.FAILED, error: message };
+    setState(stateRef.current);
   }
 
   async function performCallerIceRestart() {
@@ -355,6 +393,8 @@ export function CallProvider({ children }) {
     const call = activeCallRef.current;
 
     if (!peer || !call?.id || roleRef.current !== 'caller') return;
+    // Never start a second offer while the initial offer/answer exchange is unsettled.
+    if (peer.signalingState !== 'stable' || !peer.remoteDescription) return;
     if (restartInFlightRef.current) return;
 
     const attempts = stateRef.current.reconnectAttempts + 1;
@@ -376,6 +416,23 @@ export function CallProvider({ children }) {
     }));
 
     try {
+      // Short-lived TURN credentials may expire during a long call; refresh before ICE restart.
+      const freshConfig = await resolveIceServers(coupleId);
+      if (peer.signalingState !== 'stable' || peer.connectionState === 'closed') {
+        restartInFlightRef.current = false;
+        return;
+      }
+      const retainRelay = !freshConfig.relayAvailable && stateRef.current.relayAvailable;
+      if (!retainRelay) {
+        peer.setConfiguration({ ...peer.getConfiguration(), iceServers: freshConfig.iceServers });
+      }
+      setState((previous) => ({
+        ...previous,
+        relayAvailable: retainRelay || freshConfig.relayAvailable,
+        warning: retainRelay
+          ? 'Could not refresh TURN credentials; trying the existing relay configuration.'
+          : freshConfig.warning,
+      }));
       peer.restartIce?.();
       const offer = await createAndSetOffer(peer, { iceRestart: true });
       await writeRestartOffer(coupleId, call.id, revision, offer);
@@ -412,8 +469,29 @@ export function CallProvider({ children }) {
     await requestIceRestart(coupleId, call.id, user.uid).catch(() => {});
   }
 
+  function scheduleConnectDeadline(callId) {
+    clearTimeout(connectTimerRef.current);
+    connectTimerRef.current = window.setTimeout(() => {
+      if (activeCallRef.current?.id !== callId) return;
+      if (peerRef.current?.connectionState === 'connected') return;
+      const relayHint = stateRef.current.relayAvailable
+        ? 'Check both connections and try again.'
+        : 'Your network may require a TURN relay, which is not configured.';
+      failActiveCall('connection-timeout', `The call could not connect. ${relayHint}`).catch(() => {});
+    }, CONNECT_TIMEOUT_MS);
+  }
+
   function scheduleRecovery() {
     if (!peerRef.current || !activeCallRef.current?.id) return;
+    const callId = activeCallRef.current.id;
+    if (!recoveryDeadlineRef.current) {
+      recoveryDeadlineRef.current = window.setTimeout(() => {
+        recoveryDeadlineRef.current = null;
+        if (activeCallRef.current?.id !== callId || peerRef.current?.connectionState === 'connected') return;
+        failActiveCall('recovery-timeout', 'The connection could not recover. Try calling again on a stronger network.').catch(() => {});
+      }, RECOVERY_TIMEOUT_MS);
+    }
+    if (!peerRef.current.remoteDescription || peerRef.current.signalingState !== 'stable') return;
 
     setState((previous) => ({
       ...previous,
@@ -469,6 +547,7 @@ export function CallProvider({ children }) {
     roleRef.current = localSide;
     currentRevisionRef.current = 0;
     pendingCandidatesByRevisionRef.current = new Map();
+    candidateWriteFailuresRef.current = 0;
     processedInitialAnswerRef.current = false;
     processedRestartOfferRef.current = 0;
     processedRestartAnswerRef.current = 0;
@@ -483,7 +562,15 @@ export function CallProvider({ children }) {
           localSide,
           candidate,
           currentRevisionRef.current,
-        ).catch(() => {}),
+        ).catch(() => {
+          candidateWriteFailuresRef.current += 1;
+          if (candidateWriteFailuresRef.current >= 2) {
+            setState((previous) => ({
+              ...previous,
+              warning: 'Unable to exchange network candidates through Firebase. Check connectivity and Firestore permissions.',
+            }));
+          }
+        }),
       onTrack: (stream) => {
         remoteStreamRef.current = stream;
         setRemoteStream(stream);
@@ -491,6 +578,9 @@ export function CallProvider({ children }) {
       onConnectionStateChange: (connectionState) => {
         if (connectionState === 'connected') {
           clearTimeout(reconnectTimerRef.current);
+          clearTimeout(recoveryDeadlineRef.current);
+          recoveryDeadlineRef.current = null;
+          clearTimeout(connectTimerRef.current);
           clearTimeout(ringTimerRef.current);
           restartInFlightRef.current = false;
 
@@ -597,7 +687,9 @@ export function CallProvider({ children }) {
 
         if (call.status === 'failed') {
           await recordHistory(call, 'failed');
-          await finishLocal('Call failed.', true);
+          await finishLocal('Call failed. Check device and connection settings, then retry.', false);
+          stateRef.current = { ...initialCallState, status: CALL_STATUS.FAILED, error: 'Call failed. Check device and connection settings, then retry.' };
+          setState(stateRef.current);
           return;
         }
 
@@ -608,6 +700,7 @@ export function CallProvider({ children }) {
           try {
             await applyRemoteDescription(peerRef.current, call.answer);
             await flushRemoteCandidates(0);
+            scheduleConnectDeadline(callId);
             setState((previous) => ({ ...previous, status: CALL_STATUS.CONNECTING }));
           } catch {
             await failActiveCall('answer-apply-failed', 'Unable to complete call setup.');
@@ -630,7 +723,10 @@ export function CallProvider({ children }) {
           await handleRestartAnswer(call);
         }
       },
-      () => {},
+      () => setState((previous) => ({
+        ...previous,
+        warning: 'Call signaling was interrupted. Reopen OHS and check your network connection.',
+      })),
     );
   }
 
@@ -649,6 +745,7 @@ export function CallProvider({ children }) {
   }
 
   async function startCall(type = 'video') {
+    if (startLockRef.current || answerLockRef.current) throw new Error('Call setup is already in progress.');
     if (!user?.uid || !coupleId) throw new Error('Sign in to start a call.');
     if (membersRef.current.length !== 2) {
       throw new Error('Private calling requires exactly two members in this couple room.');
@@ -660,24 +757,19 @@ export function CallProvider({ children }) {
       throw new Error('Another call is already active.');
     }
 
-    setState({
-      ...initialCallState,
-      status: CALL_STATUS.REQUESTING_MEDIA,
-      type,
-      callerId: user.uid,
-      calleeId: partner.id,
-    });
+    startLockRef.current = true;
+    stateRef.current = { ...initialCallState, status: CALL_STATUS.REQUESTING_MEDIA, type, callerId: user.uid, calleeId: partner.id };
+    setState(stateRef.current);
 
     let createdCallId = null;
 
     try {
-      const [stream, iceConfig] = await Promise.all([
-        acquireLocalMedia(type),
-        resolveIceServers(coupleId),
-      ]);
-
+      // Establish ownership of the media tracks before awaiting credentials.
+      // Promise.all can reject after getUserMedia succeeds, leaking a live camera.
+      const stream = await acquireLocalMedia(type);
       localStreamRef.current = stream;
       setLocalStream(stream);
+      const iceConfig = await resolveIceServers(coupleId);
 
       setState((previous) => ({
         ...previous,
@@ -744,18 +836,23 @@ export function CallProvider({ children }) {
       closePeerConnection(peerRef.current);
       peerRef.current = null;
 
-      setState((previous) => ({
-        ...previous,
-        status: CALL_STATUS.FAILED,
-        error: error?.message || 'Unable to start the call.',
-      }));
+      activeCallRef.current = null;
+      remoteIceUnsubRef.current?.();
+      callUnsubRef.current?.();
+      remoteIceUnsubRef.current = null;
+      callUnsubRef.current = null;
+      const failed = { ...initialCallState, status: CALL_STATUS.FAILED, error: error?.message || 'Unable to start the call.' };
+      stateRef.current = failed;
+      setState(failed);
       throw error;
+    } finally {
+      startLockRef.current = false;
     }
   }
 
   async function answerCall() {
     const call = incomingCall;
-    if (!call?.id) return;
+    if (!call?.id || answerLockRef.current) return;
 
     if (call.expiresAt && millis(call.expiresAt) <= Date.now()) {
       setIncomingCall(null);
@@ -763,6 +860,7 @@ export function CallProvider({ children }) {
       return;
     }
 
+    answerLockRef.current = true;
     setState((previous) => ({
       ...previous,
       status: CALL_STATUS.REQUESTING_MEDIA,
@@ -770,14 +868,11 @@ export function CallProvider({ children }) {
     }));
 
     try {
-      const [stream, iceConfig] = await Promise.all([
-        acquireLocalMedia(call.type || 'video'),
-        resolveIceServers(coupleId),
-      ]);
-
+      const stream = await acquireLocalMedia(call.type || 'video');
       localStreamRef.current = stream;
       setLocalStream(stream);
       activeCallRef.current = call;
+      const iceConfig = await resolveIceServers(coupleId);
 
       setState((previous) => ({
         ...previous,
@@ -791,11 +886,15 @@ export function CallProvider({ children }) {
       observeRemoteCandidates(call.id, 'caller');
       observeCall(call.id, 'callee');
 
+      if (call.expiresAt && millis(call.expiresAt) <= Date.now()) {
+        throw new Error('This incoming call has expired. Ask your partner to call again.');
+      }
       await applyRemoteDescription(peer, call.offer);
       await flushRemoteCandidates(0);
 
       const answer = await createAndSetAnswer(peer);
       await writeAnswer(coupleId, call.id, answer);
+      scheduleConnectDeadline(call.id);
 
       setState((previous) => ({
         ...previous,
@@ -803,12 +902,33 @@ export function CallProvider({ children }) {
         startedAt: millis(call.createdAt) || Date.now(),
       }));
       setIncomingCall(null);
+      clearTimeout(incomingExpiryTimerRef.current);
+      dismissIncomingCallAlert(call.id).catch(() => {});
     } catch (error) {
+      // A media/SDP failure must not leave the camera and microphone running.
+      remoteIceUnsubRef.current?.();
+      callUnsubRef.current?.();
+      remoteIceUnsubRef.current = null;
+      callUnsubRef.current = null;
+      closePeerConnection(peerRef.current);
+      peerRef.current = null;
+      stopMediaStream(localStreamRef.current);
+      localStreamRef.current = null;
+      setLocalStream(null);
+      const expired = call.expiresAt && millis(call.expiresAt) <= Date.now();
+      if (expired) {
+        clearTimeout(incomingExpiryTimerRef.current);
+        dismissIncomingCallAlert(call.id).catch(() => {});
+        setIncomingCall(null);
+        activeCallRef.current = null;
+      }
       setState((previous) => ({
         ...previous,
-        status: CALL_STATUS.FAILED,
-        error: error?.message || 'Unable to answer the call.',
+        status: expired ? CALL_STATUS.FAILED : CALL_STATUS.INCOMING_RINGING,
+        error: error?.message || 'Unable to answer the call. Please retry.',
       }));
+    } finally {
+      answerLockRef.current = false;
     }
   }
 
@@ -845,7 +965,7 @@ export function CallProvider({ children }) {
       cleanupCallSignaling(coupleId, call.id).catch(() => {});
     }
 
-    await finishLocal('', true);
+    await finishLocal('', stateRef.current.status !== CALL_STATUS.FAILED);
   }
 
   function toggleMute() {
@@ -890,6 +1010,12 @@ export function CallProvider({ children }) {
     return result;
   }
 
+  async function refreshCallNotificationStatus() {
+    const result = await refreshCallNotificationRegistration(coupleId, user);
+    setNotificationStatus(result);
+    return result;
+  }
+
   const value = useMemo(
     () => ({
       call: state,
@@ -907,6 +1033,7 @@ export function CallProvider({ children }) {
       flipCamera,
       notificationStatus,
       enableCallNotifications,
+      refreshCallNotificationStatus,
     }),
     [state, incomingCall, partner, members.length, localStream, remoteStream, notificationStatus],
   );

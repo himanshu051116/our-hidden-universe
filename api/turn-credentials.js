@@ -1,3 +1,4 @@
+import { cloudflareTurnConfigured, issueCloudflareTurnCredentials } from './_cloudflareTurn.js';
 import { createHmac } from 'node:crypto';
 import { getAdminServices } from './_firebaseAdmin.js';
 
@@ -55,9 +56,10 @@ export default async function handler(request, response) {
       return;
     }
 
+    const useCloudflare = cloudflareTurnConfigured();
     const turnUrls = parseList(process.env.TURN_URLS);
     const sharedSecret = process.env.TURN_SHARED_SECRET;
-    if (!turnUrls.length || !sharedSecret) {
+    if (!useCloudflare && (!turnUrls.length || !sharedSecret)) {
       response.status(503).json({ error: 'TURN is not configured.' });
       return;
     }
@@ -75,6 +77,17 @@ export default async function handler(request, response) {
       return;
     }
 
+    if (useCloudflare) {
+      const issued = await issueCloudflareTurnCredentials({
+        keyId: process.env.CLOUDFLARE_TURN_KEY_ID,
+        apiToken: process.env.CLOUDFLARE_TURN_API_TOKEN,
+        ttlSeconds: process.env.CLOUDFLARE_TURN_TTL_SECONDS,
+      });
+      response.status(200).json(issued);
+      return;
+    }
+
+    // Legacy coturn REST authentication remains supported.
     const ttl = credentialTtlSeconds();
     const expiresAtSeconds = Math.floor(Date.now() / 1000) + ttl;
     const username = `${expiresAtSeconds}:${uid}`;
@@ -84,19 +97,12 @@ export default async function handler(request, response) {
 
     const stunUrls = parseList(process.env.TURN_STUN_URLS);
     const iceServers = [];
-
-    if (stunUrls.length) {
-      iceServers.push({ urls: stunUrls });
-    }
-
-    iceServers.push({
-      urls: turnUrls,
-      username,
-      credential,
-    });
+    if (stunUrls.length) iceServers.push({ urls: stunUrls });
+    iceServers.push({ urls: turnUrls, username, credential });
 
     response.status(200).json({
       iceServers,
+      provider: 'coturn',
       expiresAt: expiresAtSeconds * 1000,
       ttlSeconds: ttl,
     });

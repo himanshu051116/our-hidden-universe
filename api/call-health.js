@@ -1,8 +1,10 @@
+import { cloudflareTurnConfigured } from './_cloudflareTurn.js';
 import { getAdminServices } from './_firebaseAdmin.js';
 
 function publicHealthFlags() {
   return {
-    turnConfigured: Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET),
+    turnConfigured: cloudflareTurnConfigured() || Boolean(process.env.TURN_URLS && process.env.TURN_SHARED_SECRET),
+    turnProvider: cloudflareTurnConfigured() ? 'cloudflare' : process.env.TURN_URLS && process.env.TURN_SHARED_SECRET ? 'coturn' : 'none',
     cronSecretConfigured: Boolean(process.env.CRON_SECRET),
     vapidConfigured: Boolean(process.env.VITE_FIREBASE_VAPID_KEY),
     nodeMajor: Number(process.versions.node.split('.')[0]),

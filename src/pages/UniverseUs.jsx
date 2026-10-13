@@ -2,6 +2,8 @@ import { ArrowRight, Bell, BellRing, Cake, DatabaseZap, Heart, Images, KeyRound,
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
+import { sendTestOnDeviceAlert, sendBackgroundPushTest } from '../services/callNotificationService.js';
+import CallReadinessCard from '../components/call/CallReadinessCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const experienceLinks = [
@@ -36,12 +38,13 @@ const experienceLinks = [
 ];
 
 export default function UniverseUs() {
-  const { logout, coupleCodeDisplay } = useAuth();
-  const { notificationStatus, enableCallNotifications } = useCall();
+  const { logout, coupleCodeDisplay, coupleId } = useAuth();
+  const { notificationStatus, enableCallNotifications, refreshCallNotificationStatus } = useCall();
   const { onResetData, resetBusy } = useOutletContext();
   const [copyStatus, setCopyStatus] = useState('');
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationChecking, setNotificationChecking] = useState(false);
 
   async function copyCode() {
     if (!coupleCodeDisplay) return;
@@ -55,19 +58,23 @@ export default function UniverseUs() {
   }
 
   async function enableAlerts() {
-    if (notificationBusy || notificationStatus.enabled) return;
+    if (notificationBusy || notificationStatus.enabled || (notificationStatus.foregroundEnabled && !notificationStatus.backgroundReady)) return;
     setNotificationBusy(true);
     setNotificationMessage('');
     try {
       const result = await enableCallNotifications();
       if (result.enabled) {
-        setNotificationMessage('Call alerts are enabled on this device.');
+        setNotificationMessage('Background call push is registered on this device. Delivery depends on the network and platform.');
+      } else if (result.foregroundEnabled) {
+        setNotificationMessage('On-device call alerts enabled while OHS is running. True closed-app push still requires server configuration.');
       } else {
         const message = {
           blocked: 'Notifications are blocked in this device or browser settings.',
           prompt: 'Notification permission was not enabled.',
           misconfigured: 'Call alerts are not available on this deployment yet.',
-          unsupported: 'This browser does not support call alerts.',
+          unsupported: 'This browser does not support browser notifications.',
+          'background-unavailable': 'Background push is not configured. You can still request on-device alerts.',
+          'server-unavailable': 'Background push server is unavailable.',
         }[result.status] || 'Unable to enable call alerts.';
         setNotificationMessage(message);
       }
@@ -76,6 +83,28 @@ export default function UniverseUs() {
     } finally {
       setNotificationBusy(false);
     }
+  }
+
+  async function checkAlerts() {
+    setNotificationChecking(true);
+    try {
+      await refreshCallNotificationStatus();
+    } finally {
+      setNotificationChecking(false);
+    }
+  }
+
+  async function sendTestAlert() {
+    const result = await sendTestOnDeviceAlert();
+    setNotificationMessage(result.ok ? 'Test notification sent to this device.' : (result.reason || 'Unable to send a test alert.'));
+  }
+
+  async function sendRealPushTest() {
+    setNotificationMessage('Requesting a Firebase push to your registered device…');
+    const result = await sendBackgroundPushTest(coupleId);
+    setNotificationMessage(result.delivered > 0
+      ? 'Firebase accepted the test push. Background the app to confirm your device displays it.'
+      : `Firebase did not deliver the test: ${result.reason || 'registration or transport error'}.`);
   }
 
   return (
@@ -111,6 +140,8 @@ export default function UniverseUs() {
         ))}
       </section>
 
+      <CallReadinessCard />
+
       <section className="glass rounded-2xl p-4 sm:rounded-3xl sm:p-5">
         <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Partner & account</p>
         <div className="mt-4 divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-black/20">
@@ -123,20 +154,59 @@ export default function UniverseUs() {
             <span className="text-xs text-blush">{copyStatus || 'Copy'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={enableAlerts}
-            disabled={notificationBusy || notificationStatus.enabled}
-            className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm text-pink-100 transition hover:bg-white/[0.05] disabled:opacity-65"
-          >
-            {notificationStatus.enabled ? <BellRing size={17} className="text-emerald-200" /> : <Bell size={17} className="text-roseGold" />}
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-white">Call alerts</span>
-              <span className="block text-xs text-pink-100/50">
-                {notificationStatus.enabled ? 'Enabled on this device' : notificationBusy ? 'Enabling…' : 'Enable incoming-call notifications'}
-              </span>
-            </span>
-          </button>
+          <div className="px-4 py-4">
+            <div className="flex items-center gap-3">
+              {notificationStatus.enabled || notificationStatus.foregroundEnabled
+                ? <BellRing size={18} className="text-emerald-200" />
+                : <Bell size={18} className="text-roseGold" />}
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-white">Incoming call notifications</p>
+                <p className="mt-1 text-xs text-pink-100/60">
+                  {notificationStatus.foregroundEnabled || notificationStatus.enabled
+                    ? 'On-device alerts permitted'
+                    : notificationStatus.status === 'blocked'
+                      ? 'Blocked in browser/device settings'
+                      : 'On-device alerts not yet permitted'}
+                </p>
+                <p className="mt-1 text-xs text-pink-100/60">
+                  {notificationStatus.enabled
+                    ? 'Background push registered (not a delivery guarantee)'
+                    : notificationStatus.backgroundReady
+                      ? 'Background service available; registration pending'
+                      : 'Closed-app push not configured. Calls still ring while OHS is open.'}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={enableAlerts}
+                disabled={notificationBusy || notificationStatus.enabled || (notificationStatus.foregroundEnabled && !notificationStatus.backgroundReady) || notificationStatus.status === 'blocked' || (notificationStatus.platform !== 'web' && !notificationStatus.backgroundReady)}
+                className="min-h-11 rounded-xl border border-blush/30 bg-blush/10 px-4 py-2 text-xs font-semibold text-white disabled:opacity-45"
+              >
+                {notificationBusy ? 'Requesting…' : notificationStatus.backgroundReady ? 'Register background alerts' : 'Allow device alerts'}
+              </button>
+              {notificationStatus.foregroundEnabled && notificationStatus.platform === 'web' ? (
+                <button type="button" onClick={sendTestAlert}
+                  className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80">
+                  Send test alert
+                </button>
+              ) : null}
+              {notificationStatus.enabled ? (
+                <button type="button" onClick={sendRealPushTest}
+                  className="min-h-11 rounded-xl border border-emerald-200/20 bg-emerald-200/5 px-4 py-2 text-xs text-emerald-100">
+                  Test Firebase push
+                </button>
+              ) : null}
+              <button type="button" onClick={checkAlerts} disabled={notificationChecking}
+                className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-xs text-pink-100/80 disabled:opacity-45">
+                {notificationChecking ? 'Checking…' : 'Refresh status'}
+              </button>
+            </div>
+            {notificationStatus.status === 'blocked' ? (
+              <p className="mt-2 text-xs text-amber-100/80">Enable notifications for this website in your browser or phone settings, then refresh status.</p>
+            ) : null}
+          </div>
 
           <button type="button" onClick={logout} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm text-pink-100 transition hover:bg-white/[0.05]">
             <LogOut size={17} className="text-roseGold" />

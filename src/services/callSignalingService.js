@@ -1,3 +1,4 @@
+import { callCollectionPath, callDocumentPath } from './callPaths.js';
 import {
   addDoc,
   collection,
@@ -22,8 +23,8 @@ export const RING_TIMEOUT_MS = 30_000;
 // to room members in both legacy and V5 rules, while the watch-party feature
 // itself only uses watchParty/current. Call documents therefore live in this
 // collection with a private _kind discriminator until the V5 rules are deployed.
-const signalingPath = (coupleId) => collection(db, 'couples', coupleId, 'watchParty');
-const callRef = (coupleId, callId) => doc(db, 'couples', coupleId, 'watchParty', callId);
+const signalingPath = (coupleId) => collection(db, callCollectionPath(coupleId));
+const callRef = (coupleId, callId) => doc(db, callDocumentPath(coupleId, callId));
 
 function toMillis(value) {
   if (!value) return 0;
@@ -174,7 +175,8 @@ export async function addIceCandidateRecord(coupleId, callId, side, candidate, r
 
 export function subscribeToIceCandidates(coupleId, callId, side, onCandidate, onError) {
   const expectedSide = side === 'caller' ? 'caller' : 'callee';
-  const q = query(signalingPath(coupleId), where('_kind', '==', 'callCandidate'));
+  // Query only candidates belonging to this call; avoid downloading every prior call's ICE data.
+  const q = query(signalingPath(coupleId), where('callId', '==', callId));
 
   return onSnapshot(
     q,
@@ -182,7 +184,7 @@ export function subscribeToIceCandidates(coupleId, callId, side, onCandidate, on
       snapshot.docChanges().forEach((change) => {
         if (change.type !== 'added') return;
         const value = change.doc.data();
-        if (value.callId !== callId || value.side !== expectedSide) return;
+        if (value._kind !== 'callCandidate' || value.callId !== callId || value.side !== expectedSide) return;
         const { _kind, callId: _callId, side: _side, ...candidate } = value;
         onCandidate(candidate);
       });
@@ -201,13 +203,13 @@ export async function fetchCall(coupleId, callId) {
 export async function cleanupCallSignaling(coupleId, callId) {
   if (!firebaseEnabled || !coupleId || !callId) return;
 
-  const snapshot = await getDocs(query(signalingPath(coupleId), where('_kind', '==', 'callCandidate')));
-  const candidates = snapshot.docs.filter((entry) => entry.data()?.callId === callId);
-  if (!candidates.length) return;
-
-  const batch = writeBatch(db);
-  candidates.forEach((entry) => batch.delete(entry.ref));
-  await batch.commit();
+  const snapshot = await getDocs(query(signalingPath(coupleId), where('callId', '==', callId)));
+  const candidates = snapshot.docs.filter((entry) => entry.data()?._kind === 'callCandidate');
+  for (let offset = 0; offset < candidates.length; offset += 400) {
+    const batch = writeBatch(db);
+    candidates.slice(offset, offset + 400).forEach((entry) => batch.delete(entry.ref));
+    await batch.commit();
+  }
 }
 
 export async function removeCallRecord(coupleId, callId) {

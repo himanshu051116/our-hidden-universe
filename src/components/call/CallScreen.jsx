@@ -38,9 +38,24 @@ export default function CallScreen() {
   const localRef = useRef(null);
   const remoteRef = useRef(null);
   const [now, setNow] = useState(Date.now());
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
   useEffect(() => attachStream(localRef.current, localStream), [localStream]);
-  useEffect(() => attachStream(remoteRef.current, remoteStream), [remoteStream]);
+  useEffect(() => {
+    const element = remoteRef.current;
+    if (!element || !remoteStream) return;
+    attachStream(element, remoteStream);
+    element.play?.().then(() => setPlaybackBlocked(false)).catch(() => setPlaybackBlocked(true));
+  }, [remoteStream, call.type, call.status]);
+
+  async function unlockPlayback() {
+    try {
+      await remoteRef.current?.play?.();
+      setPlaybackBlocked(false);
+    } catch {
+      setPlaybackBlocked(true);
+    }
+  }
 
   useEffect(() => {
     if (call.status !== CALL_STATUS.CONNECTED || !call.connectedAt) return undefined;
@@ -60,6 +75,23 @@ export default function CallScreen() {
   );
 
   if (!visible) return null;
+
+  if (call.status === CALL_STATUS.FAILED) {
+    return (
+      <div className="fixed inset-0 z-[85] grid place-items-center bg-[#05040a] px-5" role="alert">
+        <div className="w-full max-w-sm rounded-3xl border border-red-300/20 bg-white/[0.045] p-6 text-center">
+          <h2 className="font-display text-3xl text-white">Call could not connect</h2>
+          <p className="mt-3 text-sm leading-6 text-pink-100/75">
+            {call.error || 'Check microphone, camera and network permissions, then try again.'}
+          </p>
+          <button type="button" onClick={() => endCall('dismiss-failed')}
+            className="mt-6 min-h-12 w-full rounded-2xl bg-blush px-4 font-semibold text-midnight">
+            Close and retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const isAudioOnly = call.type === 'audio';
   const partnerName = partner?.displayName || partner?.email || 'Your partner';
@@ -83,7 +115,16 @@ export default function CallScreen() {
   const showConnectionWarning = Boolean(call.warning) && call.status !== CALL_STATUS.CONNECTED;
 
   return (
-    <div className="fixed inset-0 z-[75] overflow-hidden bg-[#020308]">
+    <div data-call-status={call.status} className="fixed inset-0 z-[75] overflow-hidden bg-[#020308]">
+      {isAudioOnly && remoteStream ? (
+        <audio ref={remoteRef} autoPlay playsInline aria-label="Partner audio" />
+      ) : null}
+      {playbackBlocked ? (
+        <button type="button" onClick={unlockPlayback}
+          className="absolute inset-x-6 top-[calc(6rem+env(safe-area-inset-top))] z-30 mx-auto max-w-xs rounded-2xl border border-amber-200/30 bg-black/85 px-4 py-3 text-sm font-semibold text-white shadow-xl">
+          Tap to play partner audio/video
+        </button>
+      ) : null}
       <div className="absolute inset-0">
         {!isAudioOnly && remoteStream ? (
           <video ref={remoteRef} autoPlay playsInline className="h-full w-full object-cover" />
