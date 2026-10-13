@@ -268,89 +268,131 @@ async function registerWeb(coupleId, user, requestPermission) {
   };
 }
 
+// Permission for on-device notifications is independent of FCM/server readiness.
+// Foreground Firestore ringing still works when background push cannot be configured.
 export async function getCallNotificationReadiness(coupleId, user) {
   if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { status: 'unavailable', canEnable: false, serverReady: false };
+    return { enabled: false, status: 'unavailable', canEnable: false, serverReady: false, foregroundEnabled: false };
   }
 
+  const native = Capacitor.isNativePlatform();
+  let permission = 'unsupported';
+  let supported = false;
+  if (native) {
+    const result = await PushNotifications.checkPermissions();
+    permission = result.receive;
+    supported = true;
+  } else {
+    supported = typeof window !== 'undefined' && 'Notification' in window;
+    permission = supported ? Notification.permission : 'unsupported';
+  }
+
+  const foregroundEnabled = supported && permission === 'granted';
   const server = await fetchNotificationServerHealth();
-  if (!server.serverReady) {
-    return { status: 'server-unavailable', canEnable: false, serverReady: false };
-  }
+  const vapidReady = native || Boolean(import.meta.env.VITE_FIREBASE_VAPID_KEY);
+  const messagingSupported = native || (
+    supported && 'serviceWorker' in navigator && await isSupported().catch(() => false)
+  );
+  const backgroundReady = server.serverReady && vapidReady && messagingSupported;
 
-  if (Capacitor.isNativePlatform()) {
-    const permission = await PushNotifications.checkPermissions();
-    const status = permission.receive === 'granted'
-      ? 'ready'
-      : permission.receive === 'denied'
-        ? 'blocked'
-        : 'prompt';
-    return {
-      status,
-      canEnable: status === 'ready' || status === 'prompt',
-      serverReady: true,
-      platform: Capacitor.getPlatform(),
-      permission: permission.receive,
-    };
-  }
+  const status = !supported ? 'unsupported'
+    : permission === 'denied' ? 'blocked'
+      : !backgroundReady ? (foregroundEnabled ? 'foreground-only' : 'background-unavailable')
+        : permission === 'granted' ? 'ready' : 'prompt';
 
-  if (!('Notification' in window) || !('serviceWorker' in navigator) || !(await isSupported())) {
-    return { status: 'unsupported', canEnable: false, serverReady: true, platform: 'web' };
-  }
-
-  if (!import.meta.env.VITE_FIREBASE_VAPID_KEY) {
-    return { status: 'misconfigured', canEnable: false, serverReady: true, platform: 'web' };
-  }
-
-  const permission = Notification.permission;
-  const status = permission === 'granted' ? 'ready' : permission === 'denied' ? 'blocked' : 'prompt';
   return {
+    enabled: false,
     status,
-    canEnable: status === 'ready' || status === 'prompt',
-    serverReady: true,
-    platform: 'web',
+    canEnable: backgroundReady && permission !== 'denied',
+    serverReady: server.serverReady,
+    foregroundEnabled,
+    backgroundReady,
+    platform: native ? Capacitor.getPlatform() : 'web',
     permission,
   };
 }
 
-export async function enableCallNotifications(coupleId, user) {
-  if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { enabled: false, status: 'unavailable', platform: 'unknown', targetType: 'unknown' };
-  }
-
-  const readiness = await getCallNotificationReadiness(coupleId, user);
-  if (!readiness.canEnable) {
+export async function requestOnDeviceCallAlerts() {
+  if (Capacitor.isNativePlatform()) {
+    let permission = await PushNotifications.checkPermissions();
+    if (permission.receive === 'prompt') permission = await PushNotifications.requestPermissions();
     return {
-      enabled: false,
-      status: readiness.status,
-      platform: readiness.platform || 'unknown',
-      targetType: Capacitor.isNativePlatform() ? 'token' : 'fid',
+      foregroundEnabled: permission.receive === 'granted',
+      status: permission.receive === 'granted' ? 'foreground-only' : 'blocked',
     };
   }
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return { foregroundEnabled: false, status: 'unsupported' };
+  }
+  let permission = Notification.permission;
+  if (permission === 'default') permission = await Notification.requestPermission();
+  return {
+    foregroundEnabled: permission === 'granted',
+    status: permission === 'granted' ? 'foreground-only' : permission === 'denied' ? 'blocked' : 'prompt',
+  };
+}
 
-  return Capacitor.isNativePlatform()
-    ? registerNative(coupleId, user, true)
-    : registerWeb(coupleId, user, true);
+const alertedCalls = new Set();
+export async function showIncomingCallAlert(call, callerName = 'Your partner') {
+  if (!call?.id || typeof window === 'undefined' || document.visibilityState === 'visible') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (alertedCalls.has(call.id)) return;
+  alertedCalls.add(call.id);
+  if (alertedCalls.size > 30) alertedCalls.delete(alertedCalls.values().next().value);
+
+  const title = call.type === 'audio' ? 'Incoming audio call' : 'Incoming video call';
+  const options = {
+    body: `${callerName} is calling you.`,
+    tag: `ohu-call-${call.id}`,
+    icon: '/icon-192.png',
+    data: { url: `/universe/chat?callId=${encodeURIComponent(call.id)}` },
+  };
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    if (registration?.showNotification) {
+      await registration.showNotification(title, { ...options, requireInteraction: true, renotify: true });
+    } else {
+      const notification = new Notification(title, options);
+      notification.onclick = () => {
+        window.focus();
+        emitCallOpen({ type: 'incoming_call', coupleId: call.coupleId, callId: call.id });
+        notification.close();
+      };
+    }
+  } catch {
+    alertedCalls.delete(call.id);
+  }
+}
+
+export async function enableCallNotifications(coupleId, user) {
+  if (!firebaseEnabled || !user?.uid || !coupleId) {
+    return { enabled: false, status: 'unavailable', foregroundEnabled: false };
+  }
+  const readiness = await getCallNotificationReadiness(coupleId, user);
+  if (!readiness.backgroundReady) {
+    const local = await requestOnDeviceCallAlerts();
+    return { ...readiness, ...local, enabled: false };
+  }
+  if (!readiness.canEnable) return { ...readiness, enabled: false };
+  const result = Capacitor.isNativePlatform()
+    ? await registerNative(coupleId, user, true)
+    : await registerWeb(coupleId, user, true);
+  return { ...readiness, ...result, foregroundEnabled: result.enabled || readiness.foregroundEnabled };
 }
 
 export async function refreshCallNotificationRegistration(coupleId, user) {
-  if (!firebaseEnabled || !user?.uid || !coupleId) {
-    return { enabled: false, status: 'unavailable', platform: 'unknown', targetType: 'unknown' };
-  }
-
   const readiness = await getCallNotificationReadiness(coupleId, user);
-  if (!readiness.canEnable || readiness.status === 'prompt') {
-    return {
-      enabled: false,
-      status: readiness.status,
-      platform: readiness.platform || 'unknown',
-      targetType: Capacitor.isNativePlatform() ? 'token' : 'fid',
-    };
+  if (!readiness.backgroundReady || !readiness.canEnable || readiness.permission !== 'granted') {
+    return readiness;
   }
-
-  return Capacitor.isNativePlatform()
-    ? registerNative(coupleId, user, false)
-    : registerWeb(coupleId, user, false);
+  try {
+    const result = Capacitor.isNativePlatform()
+      ? await registerNative(coupleId, user, false)
+      : await registerWeb(coupleId, user, false);
+    return { ...readiness, ...result, foregroundEnabled: result.enabled || readiness.foregroundEnabled };
+  } catch {
+    return { ...readiness, enabled: false, status: 'registration-failed' };
+  }
 }
 
 export async function removeCurrentCallNotificationRegistration(coupleId, user) {
