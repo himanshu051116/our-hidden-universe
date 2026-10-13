@@ -258,10 +258,9 @@ export function CallProvider({ children }) {
     if (!peerRef.current) return;
 
     const revision = Number(record?.revision || 0);
-    if (
-      revision !== currentRevisionRef.current
-      || !peerRef.current.remoteDescription
-    ) {
+    // Older revisions can never become valid again after an ICE restart.
+    if (revision < currentRevisionRef.current) return;
+    if (revision > currentRevisionRef.current || !peerRef.current.remoteDescription) {
       queueCandidate(record);
       return;
     }
