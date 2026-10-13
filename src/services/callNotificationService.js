@@ -372,6 +372,31 @@ export async function showIncomingCallAlert(call, callerName = 'Your partner') {
   }
 }
 
+export async function sendTestOnDeviceAlert() {
+  if (Capacitor.isNativePlatform()) {
+    return { ok: false, reason: 'Native notification testing requires configured push delivery.' };
+  }
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return { ok: false, reason: 'Allow notifications for this site first.' };
+  }
+  const options = {
+    body: 'Device alerts are permitted while OHS is running.',
+    tag: 'ohu-notification-test',
+    icon: '/icon-192.png',
+  };
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    if (registration?.showNotification) {
+      await registration.showNotification('OHS notification test', options);
+    } else {
+      new Notification('OHS notification test', options);
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'This browser could not display an OS notification.' };
+  }
+}
+
 export async function dismissIncomingCallAlert(callId) {
   if (!callId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   alertedCalls.delete(callId);
