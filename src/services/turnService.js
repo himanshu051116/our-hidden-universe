@@ -17,7 +17,11 @@ export async function resolveIceServers(coupleId) {
 
   try {
     const idToken = await auth.currentUser.getIdToken();
-    const response = await fetch('/api/turn-credentials', {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    let response;
+    try {
+      response = await fetch('/api/turn-credentials', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${idToken}`,
@@ -26,7 +30,11 @@ export async function resolveIceServers(coupleId) {
       cache: 'no-store',
       credentials: 'same-origin',
       body: JSON.stringify({ coupleId }),
+      signal: controller.signal,
     });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       throw new Error(`TURN endpoint returned ${response.status}`);
@@ -39,15 +47,15 @@ export async function resolveIceServers(coupleId) {
       throw new Error('TURN credentials are already expiring.');
     }
 
+    const relayAvailable = safeServers.some((entry) =>
+      (Array.isArray(entry.urls) ? entry.urls : [entry.urls])
+        .some((url) => /^turns?:/i.test(String(url))),
+    );
     return {
       iceServers: [...FALLBACK_ICE_SERVERS, ...safeServers],
-      relayAvailable: safeServers.some((entry) =>
-        (Array.isArray(entry.urls) ? entry.urls : [entry.urls])
-          .filter(Boolean)
-          .some((url) => String(url).startsWith('turn:') || String(url).startsWith('turns:')),
-      ),
+      relayAvailable,
       expiresAt: payload.expiresAt || null,
-      warning: '',
+      warning: relayAvailable ? '' : 'No usable TURN relay was returned; using STUN only.',
     };
   } catch {
     return {
