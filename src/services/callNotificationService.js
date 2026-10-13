@@ -481,6 +481,29 @@ export async function sendIncomingCallPush(coupleId, callId) {
   };
 }
 
+export async function sendBackgroundPushTest(coupleId) {
+  if (!coupleId || !auth?.currentUser) return { ok: false, delivered: 0, reason: 'not-signed-in' };
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch('/api/call-push-test', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: JSON.stringify({ coupleId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    return {
+      ok: response.ok,
+      delivered: Number(body.delivered || 0),
+      failed: Number(body.failed || 0),
+      reason: body.reason || body.error || (response.ok ? '' : 'delivery-failed'),
+    };
+  } catch {
+    return { ok: false, delivered: 0, reason: 'server-unreachable' };
+  }
+}
+
 export function disposeNativeCallNotificationListeners() {
   nativeHandles.forEach((handle) => handle?.remove?.());
   nativeHandles = [];
