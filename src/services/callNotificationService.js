@@ -287,7 +287,7 @@ export async function getCallNotificationReadiness(coupleId, user) {
     permission = supported ? Notification.permission : 'unsupported';
   }
 
-  const foregroundEnabled = supported && permission === 'granted';
+  const foregroundEnabled = !native && supported && permission === 'granted';
   const server = await fetchNotificationServerHealth();
   const vapidReady = native || Boolean(import.meta.env.VITE_FIREBASE_VAPID_KEY);
   const messagingSupported = native || (
@@ -314,12 +314,8 @@ export async function getCallNotificationReadiness(coupleId, user) {
 
 export async function requestOnDeviceCallAlerts() {
   if (Capacitor.isNativePlatform()) {
-    let permission = await PushNotifications.checkPermissions();
-    if (permission.receive === 'prompt') permission = await PushNotifications.requestPermissions();
-    return {
-      foregroundEnabled: permission.receive === 'granted',
-      status: permission.receive === 'granted' ? 'foreground-only' : 'blocked',
-    };
+    // Native OS push requires a configured FCM server; do not ask for an unusable permission.
+    return { foregroundEnabled: false, status: 'background-unavailable' };
   }
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return { foregroundEnabled: false, status: 'unsupported' };
