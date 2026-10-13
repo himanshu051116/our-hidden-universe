@@ -2,6 +2,7 @@ import { ArrowRight, Bell, BellRing, Cake, DatabaseZap, Heart, Images, KeyRound,
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
+import CallReadinessCard from '../components/call/CallReadinessCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const experienceLinks = [
@@ -124,6 +125,8 @@ export default function UniverseUs() {
           </Link>
         ))}
       </section>
+
+      <CallReadinessCard />
 
       <section className="glass rounded-2xl p-4 sm:rounded-3xl sm:p-5">
         <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Partner & account</p>
