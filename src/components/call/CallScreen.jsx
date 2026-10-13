@@ -61,6 +61,23 @@ export default function CallScreen() {
 
   if (!visible) return null;
 
+  if (call.status === CALL_STATUS.FAILED) {
+    return (
+      <div className="fixed inset-0 z-[85] grid place-items-center bg-[#05040a] px-5" role="alert">
+        <div className="w-full max-w-sm rounded-3xl border border-red-300/20 bg-white/[0.045] p-6 text-center">
+          <h2 className="font-display text-3xl text-white">Call could not connect</h2>
+          <p className="mt-3 text-sm leading-6 text-pink-100/75">
+            {call.error || 'Check microphone, camera and network permissions, then try again.'}
+          </p>
+          <button type="button" onClick={() => endCall('dismiss-failed')}
+            className="mt-6 min-h-12 w-full rounded-2xl bg-blush px-4 font-semibold text-midnight">
+            Close and retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isAudioOnly = call.type === 'audio';
   const partnerName = partner?.displayName || partner?.email || 'Your partner';
   const initial = String(partnerName).trim().charAt(0).toUpperCase() || 'P';
