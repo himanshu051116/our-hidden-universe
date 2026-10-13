@@ -52,6 +52,7 @@ const MAX_RESTART_ATTEMPTS = 2;
 const RECONNECT_DELAY_MS = 2500;
 const RING_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 25_000;
+const RECOVERY_TIMEOUT_MS = 35_000;
 
 function millis(value) {
   if (!value) return 0;
@@ -99,6 +100,7 @@ export function CallProvider({ children }) {
   const restartInFlightRef = useRef(false);
 
   const reconnectTimerRef = useRef(null);
+  const recoveryDeadlineRef = useRef(null);
   const connectTimerRef = useRef(null);
   const startLockRef = useRef(false);
   const answerLockRef = useRef(false);
@@ -204,6 +206,7 @@ export function CallProvider({ children }) {
   useEffect(
     () => () => {
       clearTimeout(reconnectTimerRef.current);
+      clearTimeout(recoveryDeadlineRef.current);
       clearTimeout(connectTimerRef.current);
       clearTimeout(ringTimerRef.current);
       clearTimeout(incomingExpiryTimerRef.current);
@@ -308,6 +311,7 @@ export function CallProvider({ children }) {
     finishLockRef.current = true;
 
     clearTimeout(reconnectTimerRef.current);
+    clearTimeout(recoveryDeadlineRef.current);
     clearTimeout(connectTimerRef.current);
     clearTimeout(ringTimerRef.current);
     clearTimeout(incomingExpiryTimerRef.current);
@@ -480,6 +484,14 @@ export function CallProvider({ children }) {
 
   function scheduleRecovery() {
     if (!peerRef.current || !activeCallRef.current?.id) return;
+    const callId = activeCallRef.current.id;
+    if (!recoveryDeadlineRef.current) {
+      recoveryDeadlineRef.current = window.setTimeout(() => {
+        recoveryDeadlineRef.current = null;
+        if (activeCallRef.current?.id !== callId || peerRef.current?.connectionState === 'connected') return;
+        failActiveCall('recovery-timeout', 'The connection could not recover. Try calling again on a stronger network.').catch(() => {});
+      }, RECOVERY_TIMEOUT_MS);
+    }
     if (!peerRef.current.remoteDescription || peerRef.current.signalingState !== 'stable') return;
 
     setState((previous) => ({
@@ -567,6 +579,8 @@ export function CallProvider({ children }) {
       onConnectionStateChange: (connectionState) => {
         if (connectionState === 'connected') {
           clearTimeout(reconnectTimerRef.current);
+          clearTimeout(recoveryDeadlineRef.current);
+          recoveryDeadlineRef.current = null;
           clearTimeout(connectTimerRef.current);
           clearTimeout(ringTimerRef.current);
           restartInFlightRef.current = false;
