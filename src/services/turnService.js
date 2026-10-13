@@ -4,18 +4,7 @@ export const FALLBACK_ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
 ];
 
-export function validateIceServers(entries) {
-  if (!Array.isArray(entries)) return [];
-  return entries.flatMap((entry) => {
-    const urls = (Array.isArray(entry?.urls) ? entry.urls : [entry?.urls])
-      .filter((url) => typeof url === 'string' && /^(stun|stuns|turn|turns):[^\\s]+$/i.test(url));
-    if (!urls.length) return [];
-    const needsCredentials = urls.some((url) => /^turns?:/i.test(url));
-    if (needsCredentials && (!entry.username || !entry.credential)) return [];
-    return [{ urls, ...(needsCredentials ? { username: entry.username, credential: entry.credential } : {}) }];
-  });
-}
-
+import { validateIceServers } from './iceServerConfig.js';
 export async function resolveIceServers(coupleId) {
   if (!firebaseEnabled || !auth?.currentUser || !coupleId) {
     return {
