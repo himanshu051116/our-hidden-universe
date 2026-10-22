@@ -83,7 +83,7 @@ function ChatDemo() {
   }
 
   return (
-    <div className="flex h-[320px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[#090b19]/90 p-3 sm:h-[350px] sm:p-4">
+    <div className="flex h-[375px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[#090b19]/90 p-3 sm:h-[350px] sm:p-4">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div className="flex items-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-[#48314f] text-lg" aria-hidden="true">🌙</span>
@@ -155,7 +155,7 @@ function SkyDemo() {
   }
 
   return (
-    <div className="relative flex h-[320px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_75%,#332144_0%,#11152b_50%,#060814_95%)] p-3 sm:h-[350px] sm:p-4">
+    <div className="relative flex h-[375px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_75%,#332144_0%,#11152b_50%,#060814_95%)] p-3 sm:h-[350px] sm:p-4">
       <div className="relative z-10 flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-semibold tracking-[0.16em] text-[#f5bdd3]">OUR NIGHT SKY</p>
@@ -215,7 +215,7 @@ function LettersDemo() {
   const letter = letters[selected];
 
   return (
-    <div className="flex h-[320px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_34%,#452a4d,#17101e_70%,#0d0b18)] p-3 sm:h-[350px] sm:p-4">
+    <div className="flex h-[375px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_34%,#452a4d,#17101e_70%,#0d0b18)] p-3 sm:h-[350px] sm:p-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-[#ffbfd1]">Open when…</p>
       <div aria-label="Choose a sample letter" role="group" className="mt-2 flex flex-wrap gap-2">
         {letters.map((item, index) => (
@@ -233,7 +233,8 @@ function LettersDemo() {
           </button>
         ))}
       </div>
-      <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto rounded-2xl border border-white/10 bg-black/15 px-3 py-2 text-center">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-black/15 px-3 py-3 text-center">
+        <div className="flex min-h-full flex-col items-center justify-start gap-1">
         <span className="mb-1 text-3xl" aria-hidden="true">{isOpen ? '💌' : '✉️'}</span>
         <h3 className="font-display text-[27px] leading-tight text-white">
           {isOpen ? letter.heading : 'A note for when ' + letter.title.toLowerCase() + '.'}
@@ -241,6 +242,7 @@ function LettersDemo() {
         <p className="mt-1 max-w-xs text-xs leading-5 text-pink-100/75" aria-live="polite">
           {isOpen ? letter.body : 'Just one small envelope, ready when you need it.'}
         </p>
+        </div>
       </div>
       <button type="button" onClick={() => setIsOpen((open) => !open)} className={actionClass + ' mt-3 self-center'}>
         {isOpen ? 'Close letter' : 'Open letter'}
@@ -289,7 +291,7 @@ function TogetherDemo({ active }) {
   const progress = seconds / durationSeconds * 100;
 
   return (
-    <div className="flex h-[320px] min-h-0 flex-col rounded-[22px] border border-white/10 bg-[#0a0b17] p-3 sm:h-[350px] sm:p-4">
+    <div className="flex h-[375px] min-h-0 flex-col rounded-[22px] border border-white/10 bg-[#0a0b17] p-3 sm:h-[350px] sm:p-4">
       <div className="rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_55%_10%,#754d79,#27243b_70%,#111426)] px-3 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#ffd0e0]">A shared movie-night timeline</p>
         <h3 className="mt-1 font-display text-[25px] leading-tight text-white">Press play. Stay in sync.</h3>
