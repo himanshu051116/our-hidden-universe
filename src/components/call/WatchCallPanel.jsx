@@ -3,6 +3,7 @@ import {
   PhoneOff, RefreshCw, Signal, Video,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useCall } from '../../calls/CallContext.jsx';
 import { CALL_STATUS } from '../../calls/callState.js';
@@ -60,6 +61,15 @@ export default function WatchCallPanel() {
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [dockSide, setDockSide] = useState('right');
+  const [mobileDock, setMobileDock] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1023px)');
+    const update = () => setMobileDock(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
 
   const connected = call.status === CALL_STATUS.CONNECTED;
   const active = activeStatuses.has(call.status);
@@ -75,11 +85,11 @@ export default function WatchCallPanel() {
         .then(() => setPlaybackBlocked(false))
         .catch(() => setPlaybackBlocked(true));
     }
-  }, [remoteStream, call.status, audioOnly, expanded]);
+  }, [remoteStream, call.status, audioOnly, expanded, mobileDock]);
 
   useEffect(() => {
     bindStream(localRef.current, localStream);
-  }, [localStream, call.status, audioOnly, expanded]);
+  }, [localStream, call.status, audioOnly, expanded, mobileDock]);
 
   useEffect(() => {
     if (!active && call.status !== CALL_STATUS.FAILED) setPlaybackBlocked(false);
@@ -107,7 +117,7 @@ export default function WatchCallPanel() {
   const quality = call.diagnostics?.quality && call.diagnostics.quality !== 'unknown'
     ? call.diagnostics.quality : null;
 
-  return (
+  const panel = (
     <aside
       aria-label="Watch Together video call"
       data-watch-call-status={call.status}
@@ -315,4 +325,7 @@ export default function WatchCallPanel() {
       ) : null}
     </aside>
   );
+  return active && mobileDock && typeof document !== 'undefined'
+    ? createPortal(panel, document.body)
+    : panel;
 }
