@@ -18,6 +18,7 @@ export default defineConfig({
     video: 'retain-on-failure',
     permissions: ['camera', 'microphone'],
     launchOptions: {
+      ...(process.env.OHS_CHROME_PATH ? { executablePath: process.env.OHS_CHROME_PATH } : {}),
       args: [
         '--use-fake-ui-for-media-stream',
         '--use-fake-device-for-media-stream',
