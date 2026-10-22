@@ -211,7 +211,7 @@ test.describe('OHS 1:1 call smoke', () => {
       const afterMove = await callerPanel.boundingBox();
       expect(beforeMove && afterMove && Math.abs(beforeMove.x - afterMove.x) > 40).toBeTruthy();
       await callerPanel.getByRole('button', { name: 'Compact' }).click();
-      await expect(callerPanel.getByRole('video', { name: 'Partner video' })).toBeVisible();
+      await expect(callerPanel.locator('video[aria-label="Partner video"]')).toBeVisible();
       await callerPanel.getByRole('button', { name: 'Expand' }).click();
       await caller.setViewportSize({ width: 1280, height: 800 });
 
