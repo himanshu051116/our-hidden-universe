@@ -6,8 +6,10 @@ import {
   PhoneOff,
   RefreshCw,
   Signal,
+  Clapperboard,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { CALL_STATUS } from '../../calls/callState.js';
 import { useCall } from '../../calls/CallContext.jsx';
 
@@ -24,6 +26,9 @@ function formatDuration(seconds) {
 }
 
 export default function CallScreen() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const inWatchRoom = location.pathname === '/universe/together/watch';
   const {
     call,
     partner,
@@ -74,7 +79,7 @@ export default function CallScreen() {
     [call.connectedAt, now],
   );
 
-  if (!visible) return null;
+  if (!visible || inWatchRoom) return null;
 
   if (call.status === CALL_STATUS.FAILED) {
     return (
@@ -169,7 +174,18 @@ export default function CallScreen() {
       </div>
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black via-black/88 to-transparent px-3 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-20 sm:px-4 sm:pt-24">
-        <div className="mx-auto max-w-sm rounded-[1.7rem] border border-white/10 bg-black/48 p-2.5 shadow-[0_18px_70px_rgba(0,0,0,.45)] backdrop-blur-2xl">
+        <div className="mx-auto max-w-sm">
+          {call.status === CALL_STATUS.CONNECTED && !isAudioOnly ? (
+            <button
+              type="button"
+              onClick={() => navigate('/universe/together/watch')}
+              className="mb-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-blush/35 bg-[#2a172e]/90 px-4 text-xs font-semibold text-blush shadow-lg backdrop-blur-sm transition hover:bg-[#40213e]"
+            >
+              <Clapperboard size={15} aria-hidden="true" />
+              Watch Together while on this call
+            </button>
+          ) : null}
+          <div className="rounded-[1.7rem] border border-white/10 bg-black/48 p-2.5 shadow-[0_18px_70px_rgba(0,0,0,.45)] backdrop-blur-2xl">
           <div className="flex items-center justify-center gap-2.5">
             <button
               type="button"
@@ -210,6 +226,7 @@ export default function CallScreen() {
             >
               <PhoneOff size={21} />
             </button>
+          </div>
           </div>
         </div>
       </div>
