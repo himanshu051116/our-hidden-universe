@@ -112,7 +112,7 @@ export default function WatchCallPanel() {
       className={
         'min-w-0 self-start overflow-hidden rounded-[26px] border border-white/15 bg-[#151020]/95 shadow-[0_24px_70px_rgba(0,0,0,.3)] lg:sticky lg:top-24 lg:w-auto lg:max-h-none ' +
         (active
-          ? 'fixed bottom-[calc(5.7rem+env(safe-area-inset-bottom))] z-40 max-h-[min(65vh,490px)] w-[min(72vw,270px)] overflow-y-auto overscroll-contain lg:static lg:overflow-visible ' +
+          ? 'fixed bottom-[calc(5.7rem+env(safe-area-inset-bottom))] z-40 max-h-[min(65vh,490px)] w-[min(72vw,270px)] overflow-y-auto overscroll-contain lg:overflow-visible ' +
             (dockSide === 'right' ? 'right-3 lg:right-auto' : 'left-3 lg:left-auto')
           : 'w-full')
       }
