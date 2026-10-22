@@ -45,13 +45,13 @@ export default function CallScreen() {
   const [now, setNow] = useState(Date.now());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
-  useEffect(() => attachStream(localRef.current, localStream), [localStream]);
+  useEffect(() => attachStream(localRef.current, localStream), [localStream, inWatchRoom, call.status]);
   useEffect(() => {
     const element = remoteRef.current;
     if (!element || !remoteStream) return;
     attachStream(element, remoteStream);
     element.play?.().then(() => setPlaybackBlocked(false)).catch(() => setPlaybackBlocked(true));
-  }, [remoteStream, call.type, call.status]);
+  }, [remoteStream, call.type, call.status, inWatchRoom]);
 
   async function unlockPlayback() {
     try {
@@ -175,7 +175,7 @@ export default function CallScreen() {
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black via-black/88 to-transparent px-3 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-20 sm:px-4 sm:pt-24">
         <div className="mx-auto max-w-sm">
-          {call.status === CALL_STATUS.CONNECTED && !isAudioOnly ? (
+          {call.status === CALL_STATUS.CONNECTED ? (
             <button
               type="button"
               onClick={() => navigate('/universe/together/watch')}
