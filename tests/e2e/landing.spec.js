@@ -138,5 +138,12 @@ test('capture settled desktop, mobile and interaction screenshots', async ({ pag
   await page.getByRole('link', { name: 'Preview', exact: true }).click();
   await page.getByRole('tab', { name: 'Letters' }).click();
   await page.getByRole('button', { name: 'Open letter' }).click();
+  const sampleLetterIsUnclipped = await page.getByText('Look up tonight.', { exact: false }).evaluate((paragraph) => {
+    const scroller = paragraph.parentElement?.parentElement;
+    const p = paragraph.getBoundingClientRect();
+    const box = scroller?.getBoundingClientRect();
+    return Boolean(box && p.top >= box.top && p.bottom <= box.bottom - 2);
+  });
+  expect(sampleLetterIsUnclipped).toBe(true);
   await page.screenshot({ path: 'test-results/landing-demo-mobile-letter.png' });
 });
