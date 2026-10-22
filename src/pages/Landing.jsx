@@ -260,7 +260,7 @@ export default function Landing() {
         </nav>
       </header>
 
-      <main id="main-content">
+      <div id="main-content">
         <section className="relative mx-auto grid w-full max-w-7xl items-center gap-9 px-4 pb-16 pt-7 sm:px-8 sm:pt-12 lg:grid-cols-[.96fr_1.04fr] lg:gap-12 lg:px-10 lg:pb-28 lg:pt-16">
           <div className="relative z-10">
             <motion.p
@@ -381,7 +381,7 @@ export default function Landing() {
             </Link>
           </div>
         </section>
-      </main>
+      </div>
 
       <footer className="relative mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-6 text-xs text-pink-100/50 sm:px-8">
         <span>Our Hidden Universe · A private place for two</span>
