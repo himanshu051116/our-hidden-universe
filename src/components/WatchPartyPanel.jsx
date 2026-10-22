@@ -270,7 +270,7 @@ export default function WatchPartyPanel() {
     lastCommandRef.current = command.commandId;
 
     const delay = getCommandDelay(command);
-    if (delay) startCountdown(delay);
+    startCountdown(delay);
     window.clearTimeout(scheduledActionRef.current);
     scheduledActionRef.current = window.setTimeout(() => {
       applyEmbeddedPlayback(command.action, commandPlaybackPosition(command));
@@ -280,7 +280,7 @@ export default function WatchPartyPanel() {
     }, delay);
 
     return () => window.clearTimeout(scheduledActionRef.current);
-  }, [room.playback, room.sessionId, room.sourceType, user?.uid]);
+  }, [room.playback?.commandId, room.sessionId, room.sourceType, user?.uid]);
 
   useEffect(() => {
     window.clearInterval(heartbeatTimerRef.current);
