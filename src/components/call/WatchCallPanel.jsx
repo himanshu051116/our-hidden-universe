@@ -57,6 +57,7 @@ export default function WatchCallPanel() {
   const [error, setError] = useState('');
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  const [dockSide, setDockSide] = useState('right');
 
   const connected = call.status === CALL_STATUS.CONNECTED;
   const active = activeStatuses.has(call.status);
@@ -108,7 +109,13 @@ export default function WatchCallPanel() {
     <aside
       aria-label="Watch Together video call"
       data-watch-call-status={call.status}
-      className="min-w-0 self-start overflow-hidden rounded-[26px] border border-white/15 bg-[#151020]/95 shadow-[0_24px_70px_rgba(0,0,0,.3)] lg:sticky lg:top-24"
+      className={
+        'min-w-0 self-start overflow-hidden rounded-[26px] border border-white/15 bg-[#151020]/95 shadow-[0_24px_70px_rgba(0,0,0,.3)] lg:sticky lg:top-24 lg:w-auto lg:max-h-none ' +
+        (active
+          ? 'fixed bottom-[calc(5.7rem+env(safe-area-inset-bottom))] z-40 max-h-[min(65vh,490px)] w-[min(72vw,270px)] overflow-y-auto overscroll-contain lg:static lg:overflow-visible ' +
+            (dockSide === 'right' ? 'right-3 lg:right-auto' : 'left-3 lg:left-auto')
+          : 'w-full')
+      }
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 p-3.5 sm:px-4">
         <div className="min-w-0">
@@ -117,18 +124,30 @@ export default function WatchCallPanel() {
           </p>
           <div className="mt-1"><StatusIndicator call={call} /></div>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          aria-controls="watch-call-content"
-          className="shrink-0 rounded-full border border-white/15 px-3 py-2 text-xs font-semibold text-pink-100/75 transition hover:border-blush/50 hover:text-white"
-        >
-          {expanded ? 'Compact' : 'Expand'}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {active ? (
+            <button
+              type="button"
+              onClick={() => setDockSide((current) => current === 'right' ? 'left' : 'right')}
+              className="rounded-full border border-white/15 px-2.5 py-2 text-[11px] font-semibold text-pink-100/75 transition hover:border-blush/50 hover:text-white lg:hidden"
+              aria-label="Move floating call to other side"
+            >
+              Move
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls="watch-call-content"
+            className="rounded-full border border-white/15 px-2.5 py-2 text-[11px] font-semibold text-pink-100/75 transition hover:border-blush/50 hover:text-white"
+          >
+            {expanded ? 'Compact' : 'Expand'}
+          </button>
+        </div>
       </div>
 
-      <div id="watch-call-content" className={expanded ? 'p-3.5 sm:p-4' : 'hidden'}>
+      <div id="watch-call-content" className={expanded ? 'p-3.5 sm:p-4' : active ? 'p-2' : 'hidden'}>
         {active ? (
           <>
             <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_center,#322240,#090912_75%)]">
@@ -272,15 +291,15 @@ export default function WatchCallPanel() {
           </div>
         )}
         {error ? <p role="alert" className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 p-3 text-xs text-red-100">{error}</p> : null}
-        <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-5 text-pink-100/55">
+        {expanded ? <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-5 text-pink-100/55">
           <Headphones size={14} className="mt-0.5 shrink-0 text-blush" aria-hidden="true" />
           Wear headphones to avoid your movie audio being picked up by the microphone. Each person plays their own video.
-        </p>
+        </p> : null}
       </div>
       {!expanded && active ? (
-        <div className="px-3.5 pb-3 text-xs text-pink-100/65">
-          {connected ? 'Call continues while this panel is compact.' : 'Call is connecting.'}
-        </div>
+        <p className="px-2 pb-2 text-center text-[10px] text-pink-100/60">
+          {connected ? 'Live call · compact view' : 'Call is connecting'}
+        </p>
       ) : null}
     </aside>
   );
