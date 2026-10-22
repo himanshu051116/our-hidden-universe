@@ -148,7 +148,6 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     executeAt: Number(command.executeAt) || sentAt,
     delayMs: Math.max(0, Number(command.delayMs) || 0),
     sentAt,
-    committedAt: serverTimestamp(),
     updatedBy: user?.uid || 'local',
     updatedByName: user?.displayName || user?.email || 'You',
   };
