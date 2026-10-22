@@ -228,6 +228,38 @@ function UniversePreview() {
   );
 }
 
+function MobileFirstLook() {
+  return (
+    <a
+      href="#preview"
+      aria-label="Explore the interactive chat, Night Sky, letters and movie preview"
+      className="group relative mt-5 block overflow-hidden rounded-[22px] border border-[#ffc2d6]/20 bg-[#160e25] shadow-[0_16px_45px_rgba(0,0,0,.22)] transition hover:border-[#ffc2d6]/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] lg:hidden"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_84%_18%,rgba(190,106,176,.25),transparent_50%)]" />
+      <div className="relative grid grid-cols-[1.25fr_1fr] gap-2.5 p-3">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[9px] font-bold uppercase tracking-[.16em] text-[#ffbdd1]">A LITTLE LOOK INSIDE</p>
+          <div className="max-w-[90%] rounded-xl rounded-bl-sm bg-white/10 px-2.5 py-2 text-[10px] text-white/85">
+            Look at the moon tonight 🌙
+          </div>
+          <div className="ml-auto max-w-[95%] rounded-xl rounded-br-sm bg-[#e79ab8]/25 px-2.5 py-2 text-[10px] text-white">
+            I wish you were here ❤️
+          </div>
+        </div>
+        <div className="relative flex min-h-[95px] flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_70%_75%,#49314f,#111526_70%)] p-2.5">
+          <p className="relative z-10 text-[9px] font-semibold tracking-[.14em] text-[#ffd2e0]">OUR NIGHT SKY</p>
+          <div aria-hidden="true" className="relative z-10 text-center text-lg tracking-[.4em] text-[#ffe1ed]">✦ · ✧</div>
+          <p className="relative z-10 text-[9px] text-pink-100/75">A star for every memory</p>
+        </div>
+      </div>
+      <div className="relative flex items-center justify-between border-t border-white/10 bg-white/[.03] px-3 py-2 text-[10px] font-semibold text-[#ffcedd]">
+        <span>Try four little experiences</span>
+        <ArrowRight size={14} className="transition group-hover:translate-x-1" aria-hidden="true" />
+      </div>
+    </a>
+  );
+}
+
 export default function Landing() {
   const { user, coupleCode } = useAuth();
   const hasUniverse = Boolean(user && coupleCode);
@@ -280,11 +312,12 @@ export default function Landing() {
             >
               Feel closer, <span className="text-[#ffbbd2]">even from miles away.</span>
             </motion.h1>
+            <MobileFirstLook />
             <motion.p
               initial={reduceMotion ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, delay: 0.14 }}
-              className="mt-5 max-w-lg text-sm leading-7 text-pink-100/80 sm:text-base sm:leading-8"
+              className="mt-4 max-w-lg text-sm leading-7 text-pink-100/80 sm:mt-5 sm:text-base sm:leading-8"
             >
               A private space to talk, watch something together, save your favourite memories, and leave little surprises for each other.
             </motion.p>
@@ -293,18 +326,18 @@ export default function Landing() {
               initial={reduceMotion ? false : { opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, delay: 0.2 }}
-              className="mt-7 flex flex-wrap items-center gap-3"
+              className="mt-5 flex flex-wrap items-center gap-2.5 sm:mt-7 sm:gap-3"
             >
               <Link
                 to={primaryDestination}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#ffc2d6] px-6 text-sm font-bold text-[#271426] shadow-[0_10px_35px_rgba(255,182,200,.2)] transition hover:-translate-y-0.5 hover:bg-[#ffe0e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:w-auto"
+                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[#ffc2d6] px-6 text-sm font-bold text-[#271426] shadow-[0_10px_35px_rgba(255,182,200,.2)] transition hover:-translate-y-0.5 hover:bg-[#ffe0e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:flex-none"
               >
                 {primaryText}
                 <ArrowRight size={17} aria-hidden="true" />
               </Link>
               <a
                 href="#preview"
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-white/20 px-6 text-sm font-semibold text-pink-100 transition hover:border-[#ffc2d6]/60 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:w-auto"
+                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full border border-white/20 px-6 text-sm font-semibold text-pink-100 transition hover:border-[#ffc2d6]/60 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:w-auto"
               >
                 <Play size={15} aria-hidden="true" />
                 Try the preview
