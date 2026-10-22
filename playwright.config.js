@@ -15,7 +15,7 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: process.env.OHS_SKIP_TEST_VIDEO === '1' ? 'off' : 'retain-on-failure',
     permissions: ['camera', 'microphone'],
     launchOptions: {
       ...(process.env.OHS_CHROME_PATH ? { executablePath: process.env.OHS_CHROME_PATH } : {}),
