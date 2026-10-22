@@ -1,4 +1,5 @@
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
+import { readyMembers } from './watchSyncMath.js';
 import { db, firebaseEnabled } from './firebase.js';
 
 const watchPartyKey = 'ohu-watch-party-v1';
@@ -157,11 +158,28 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     return playback;
   }
 
-  await setDoc(
-    doc(db, 'couples', coupleId, 'watchParty', 'current'),
-    { playback: { ...playback, committedAt: serverTimestamp() }, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+  const roomRef = doc(db, 'couples', coupleId, 'watchParty', 'current');
+  if (playback.action === 'play') {
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(roomRef);
+      const active = snapshot.data();
+      if (!snapshot.exists() || active?.sessionId !== playback.sessionId) {
+        throw new Error('The watch session changed. Reload the room and try again.');
+      }
+      if (readyMembers(active.readiness, playback.sessionId).length < 2) {
+        throw new Error('Both partners must be ready before starting playback.');
+      }
+      transaction.set(roomRef, {
+        playback: { ...playback, committedAt: serverTimestamp() },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    });
+  } else {
+    await setDoc(roomRef, {
+      playback: { ...playback, committedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
   return playback;
 }
 
