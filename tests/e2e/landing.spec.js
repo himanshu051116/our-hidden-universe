@@ -34,6 +34,15 @@ test('mobile hero remains readable without horizontal overflow', async ({ page }
   await expect(page.getByRole('link', { name: 'Create our space' }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'Explore the interactive chat, Night Sky, letters and movie preview' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Chat' })).toBeVisible();
+  const createButton = page.getByRole('link', { name: 'Create our space' }).first();
+  const isWrapped = await createButton.evaluate((element) => {
+    const textNode = [...element.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+    if (!textNode) return false;
+    const range = document.createRange();
+    range.selectNodeContents(textNode);
+    return range.getClientRects().length > 1;
+  });
+  expect(isWrapped).toBe(false);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
@@ -50,12 +59,14 @@ test('capture first-visit desktop and mobile layout screenshots', async ({ page 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/');
   await expect(page.getByRole('region', { name: 'Chat sample' })).toBeVisible();
+  await page.waitForTimeout(750);
   await page.screenshot({ path: 'test-results/landing-desktop-first-fold.png' });
   await page.screenshot({ path: 'test-results/landing-desktop-full.png', fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: /Feel closer, even from miles away/i })).toBeVisible();
+  await page.waitForTimeout(750);
   await page.screenshot({ path: 'test-results/landing-mobile-first-fold.png' });
   await page.screenshot({ path: 'test-results/landing-mobile-full.png', fullPage: true });
 });
