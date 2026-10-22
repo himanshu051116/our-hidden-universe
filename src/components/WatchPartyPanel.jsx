@@ -137,6 +137,7 @@ export default function WatchPartyPanel() {
     setReadyBusy(true);
     try {
       await setWatchPartyReady(coupleId, user, room.sessionId, !myReady);
+      if (myReady && room.playback?.action === 'play') await broadcast('pause');
       setClockNow(Date.now());
       showStatus(myReady ? 'Your Ready status is off.' : 'Ready! Waiting for your partner.');
     } catch {
@@ -618,6 +619,7 @@ export default function WatchPartyPanel() {
         />
       ) : hasNativePlayer ? (
         <video
+          key={`${room.sessionId}:${playableUrl}`}
           ref={videoRef}
           src={playableUrl}
           controls
