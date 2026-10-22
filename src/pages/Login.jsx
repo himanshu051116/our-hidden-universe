@@ -1,14 +1,19 @@
 import { motion } from 'framer-motion';
 import { HeartHandshake, KeyRound, Mail, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { login } = useAuth();
-  const [mode, setMode] = useState('login');
+  const mode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
+  const changeMode = (nextMode) => {
+    setError('');
+    setSearchParams({ mode: nextMode }, { replace: true });
+  };
   const [form, setForm] = useState({ email: '', password: '', accessCode: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,16 +43,18 @@ export default function Login() {
           <ShieldCheck size={14} />
           Private access
         </p>
-        <h1 className="mt-2 font-display text-4xl text-white">Enter your hidden universe</h1>
+        <h1 className="mt-2 font-display text-4xl text-white">{mode === 'signup' ? 'Create your little universe' : 'Join your hidden universe'}</h1>
         <p className="mt-2 text-sm leading-6 text-pink-100/80">
-          Join your partner with a couple code, or create a new private universe for the two of you.
+          {mode === 'signup'
+            ? 'Start a private space for the two of you. We will generate a couple code you can share with your partner.'
+            : 'Already have a couple code? Enter it here to join your partner.'}
         </p>
 
         <div className="mt-4 flex rounded-full bg-black/35 p-1" role="group" aria-label="Choose how to enter OHS">
           <button
             type="button"
             aria-pressed={mode === 'login'}
-            onClick={() => setMode('login')}
+            onClick={() => changeMode('login')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'login' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
             Join universe
@@ -55,7 +62,7 @@ export default function Login() {
           <button
             type="button"
             aria-pressed={mode === 'signup'}
-            onClick={() => setMode('signup')}
+            onClick={() => changeMode('signup')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'signup' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
             Create universe

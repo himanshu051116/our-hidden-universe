@@ -27,6 +27,7 @@ export default function StarField() {
         <button
           key={star.id}
           type="button"
+          tabIndex={star.id === 0 ? 0 : -1}
           onClick={() => setNote(hiddenNotes[star.id % hiddenNotes.length])}
           className="ambient-star pointer-events-auto absolute rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]"
           style={{
@@ -37,7 +38,7 @@ export default function StarField() {
             animationDelay: `${star.delay}s`,
             animationDuration: `${star.duration}s`,
           }}
-          aria-label="Reveal hidden note"
+          aria-label={star.id === 0 ? "Reveal a hidden note" : "Reveal another hidden note"}
         />
       ))}
 
