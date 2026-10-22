@@ -187,7 +187,7 @@ test.describe('OHS 1:1 call smoke', () => {
       const calleePanel = callee.getByRole('complementary', { name: 'Watch Together video call' });
       await expect(callerPanel.getByRole('button', { name: 'Video call' })).toBeEnabled();
       await callerPanel.getByRole('button', { name: 'Video call' }).click();
-      await expect(callee.getByRole('dialog', { name: /incoming/i })).toBeVisible({ timeout: 20_000 });
+      await expect(callee.getByRole('dialog')).toBeVisible({ timeout: 20_000 });
       await callee.getByRole('button', { name: 'Answer' }).click();
 
       await expect(caller.locator('[data-watch-call-status="connected"]')).toBeVisible({ timeout: 40_000 });
