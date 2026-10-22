@@ -62,11 +62,13 @@ jobs:
           cat /tmp/ohs-landing-preview.log
           exit 1
       - run: npx playwright test tests/e2e/landing.spec.js
-      - if: failure()
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: landing-e2e-failure
-          path: test-results/
+          name: landing-visual-review
+          path: |
+            test-results/landing-*.png
+            test-results/**/test-failed-*.png
           if-no-files-found: ignore
           retention-days: 3
 
