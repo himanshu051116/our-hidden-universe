@@ -445,8 +445,9 @@ export default function WatchPartyPanel() {
         sessionId: room.sessionId,
       });
       setSyncState(delay ? 'Countdown shared' : 'Sharing playback');
-    } catch {
-      showStatus('Unable to send the playback update.');
+    } catch (error) {
+      if (action === 'play' && hasSynchronizedPlayer) applyEmbeddedPlayback('pause', currentTime);
+      showStatus(error?.message || 'Unable to send the playback update.');
       setSyncState('Sync interrupted');
     }
   }
@@ -485,6 +486,11 @@ export default function WatchPartyPanel() {
     const command = room.playback;
     if (!hasSynchronizedPlayer || !command) return;
     if (room.sessionId && command.sessionId !== room.sessionId) return;
+    if (command.action === 'play' && !bothReady) {
+      applyEmbeddedPlayback('pause', command.currentTime || 0);
+      if (!quiet) showStatus('Wait for both partners to be Ready.');
+      return;
+    }
     const freshPosition = room.playback?.action === 'play'
       ? estimatedSharedTime(room.sync) ?? commandPlaybackPosition(command)
       : commandPlaybackPosition(command);
