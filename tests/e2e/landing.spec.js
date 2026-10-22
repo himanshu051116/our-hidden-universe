@@ -7,6 +7,8 @@ test('new visitor sees the product preview and the create flow', async ({ page }
   await page.getByRole('link', { name: /Create our space/i }).first().click();
   await expect(page).toHaveURL(/\/login\?mode=signup/);
   await expect(page.getByRole('heading', { name: /Create your little universe/i })).toBeVisible();
+  await expect(page.getByText('Customize your couple code (optional)')).toBeVisible();
+  await page.getByText('Customize your couple code (optional)').click();
   await expect(page.getByLabel('Couple code (optional)')).toBeVisible();
 });
 
@@ -30,6 +32,7 @@ test('mobile hero remains readable without horizontal overflow', async ({ page }
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Create our space' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Explore the interactive chat, Night Sky, letters and movie preview' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Chat' })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
