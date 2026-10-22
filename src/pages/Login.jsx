@@ -108,6 +108,15 @@ export default function Login() {
             />
           </label>
 
+          {mode === 'signup' ? (
+            <details className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
+              <summary className="cursor-pointer text-xs font-medium text-pink-100/85">
+                Customize your couple code (optional)
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-pink-100/60">
+                You do not need to choose a code. We can create one for you automatically.
+              </p>
+              <div className="mt-3">
           <label className="block">
             <span className="mb-1 inline-flex items-center gap-2 text-xs text-pink-100/80">
               <KeyRound size={12} />
@@ -130,6 +139,32 @@ export default function Login() {
               </p>
             ) : null}
           </label>
+              </div>
+            </details>
+          ) : (
+          <label className="block">
+            <span className="mb-1 inline-flex items-center gap-2 text-xs text-pink-100/80">
+              <KeyRound size={12} />
+              {mode === 'signup' ? 'Couple code (optional)' : 'Couple code'}
+            </span>
+            <input
+              type="text"
+              required={mode !== 'signup'}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              value={form.accessCode}
+              onChange={(event) => setForm((previous) => ({ ...previous, accessCode: event.target.value }))}
+              className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
+              placeholder={mode === 'signup' ? 'Leave blank to generate one' : 'Enter the code your partner shared'}
+            />
+            {mode === 'signup' ? (
+              <p className="mt-1 text-[11px] leading-4 text-pink-100/60">
+                Leave this blank and OHS will generate a unique couple code you can share with your partner.
+              </p>
+            ) : null}
+          </label>
+          )}
 
           {error ? <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p> : null}
 
