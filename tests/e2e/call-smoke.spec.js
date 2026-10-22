@@ -222,7 +222,8 @@ test.describe('OHS 1:1 call smoke', () => {
       await callerPanel.getByRole('button', { name: 'Turn camera on' }).click();
 
       // The global call provider remains alive across route transitions.
-      await caller.goto('/universe/chat');
+      await callerPanel.getByRole('button', { name: 'Full-screen call' }).click();
+      await expect(caller).toHaveURL(/\/universe\/chat$/);
       await expect(caller.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 15_000 });
       await caller.getByRole('button', { name: 'Watch Together while on this call' }).click();
       await expect(caller).toHaveURL(/\/universe\/together\/watch$/);
