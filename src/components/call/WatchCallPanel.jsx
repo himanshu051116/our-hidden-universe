@@ -1,6 +1,6 @@
 import {
   Camera, CameraOff, Headphones, Mic, MicOff, Phone,
-  PhoneOff, RefreshCw, Signal, Video, VideoOff,
+  PhoneOff, RefreshCw, Signal, Video,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useCall } from '../../calls/CallContext.jsx';
@@ -107,6 +107,7 @@ export default function WatchCallPanel() {
   return (
     <aside
       aria-label="Watch Together video call"
+      data-watch-call-status={call.status}
       className="min-w-0 self-start overflow-hidden rounded-[26px] border border-white/15 bg-[#151020]/95 shadow-[0_24px_70px_rgba(0,0,0,.3)] lg:sticky lg:top-24"
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 p-3.5 sm:px-4">
