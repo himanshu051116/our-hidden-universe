@@ -35,6 +35,9 @@ jobs:
       - name: Run call hardening tests
         run: npm run test:call
 
+      - name: Verify Watch Together sync and readiness
+        run: node --test tests/watch-sync.test.mjs
+
       - name: Build production app
         run: npm run build
 
