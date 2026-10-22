@@ -1,8 +1,7 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   ArrowRight,
   BookOpen,
-  Clapperboard,
   Heart,
   Lock,
   MessageCircleHeart,
@@ -10,23 +9,10 @@ import {
   Sparkles,
   Stars,
 } from 'lucide-react';
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
+import GuestUniverseDemo from '../components/GuestUniverseDemo.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-
-const demoStars = [
-  [12, 18], [26, 62], [35, 32], [46, 78], [59, 17], [70, 54],
-  [84, 26], [91, 75], [18, 85], [43, 13], [64, 82], [76, 13],
-  [8, 50], [92, 45],
-];
-
-const previewTabs = [
-  { key: 'chat', label: 'Chat', icon: MessageCircleHeart },
-  { key: 'sky', label: 'Night Sky', icon: Stars },
-  { key: 'letters', label: 'Letters', icon: Heart },
-  { key: 'watch', label: 'Together', icon: Clapperboard },
-];
 
 const features = [
   {
@@ -48,185 +34,6 @@ const features = [
     description: 'Write Open When letters, watch together, and make plans for the days you will share.',
   },
 ];
-
-function ChatPreview() {
-  return (
-    <div className="flex min-h-[275px] flex-col justify-end gap-3 rounded-[22px] border border-white/10 bg-[#090b19]/90 p-4 sm:min-h-[308px] sm:p-5">
-      <div className="mb-auto flex items-center gap-3 border-b border-white/10 pb-3">
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-[#48314f] text-lg" aria-hidden="true">🌙</span>
-        <div>
-          <p className="text-sm font-semibold text-white">Your favourite person</p>
-          <p className="text-[11px] text-emerald-200/75">A little closer, right here</p>
-        </div>
-      </div>
-      <div className="max-w-[85%] self-start rounded-2xl rounded-bl-md bg-white/[0.09] px-4 py-3 text-sm leading-6 text-pink-100/90">
-        I saw the moon and thought of you. 🌙
-      </div>
-      <div className="max-w-[85%] self-end rounded-2xl rounded-br-md bg-[#a85885]/35 px-4 py-3 text-sm leading-6 text-white">
-        Then we were looking at the same sky. ❤️
-      </div>
-      <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs text-pink-100/50">
-        <span className="flex-1">Your message goes here…</span>
-        <MessageCircleHeart size={16} className="text-[#ffbdd4]" aria-hidden="true" />
-      </div>
-    </div>
-  );
-}
-
-function SkyPreview({ count, addStar }) {
-  return (
-    <div className="relative flex min-h-[275px] flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_78%,#322044_0%,#10152e_37%,#060814_82%)] p-4 sm:min-h-[308px] sm:p-5">
-      <div className="relative z-10">
-        <p className="text-xs font-semibold tracking-[0.16em] text-[#f5bdd3]">OUR NIGHT SKY</p>
-        <h3 className="mt-1 font-display text-3xl text-white">A sky made of memories.</h3>
-      </div>
-      <div className="pointer-events-none absolute inset-x-4 inset-y-14" aria-hidden="true">
-        {demoStars.slice(0, count).map(([left, top], index) => (
-          <span
-            key={index}
-            className="absolute h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_12px_2px_rgba(255,214,235,.75)]"
-            style={{ left: left + '%', top: top + '%', opacity: 0.64 + (index % 3) * 0.16 }}
-          />
-        ))}
-        <div className="absolute bottom-[17%] left-[30%] h-28 w-28 rounded-full bg-[#bb5c9c]/15 blur-3xl" />
-      </div>
-      <div className="relative z-10 mt-auto flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#090a1c]/70 p-3 backdrop-blur-sm">
-        <p className="text-xs leading-5 text-pink-100/75" aria-live="polite">
-          {count} little moments in this sample sky
-        </p>
-        <button
-          type="button"
-          onClick={addStar}
-          className="shrink-0 rounded-full bg-[#ffc2d6] px-3 py-2 text-xs font-bold text-[#210f25] transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6]"
-        >
-          {count === demoStars.length ? 'Reset sky' : '+ Add a star'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function LetterPreview({ open, toggle }) {
-  return (
-    <div className="relative flex min-h-[275px] flex-col items-center justify-center overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_34%,#472a4a,#17101e_65%,#0d0b18)] px-6 py-5 text-center sm:min-h-[308px]">
-      <span className="mb-4 grid h-16 w-20 place-items-center rounded-xl border border-[#ffb7cf]/30 bg-[#ffb7cf]/15 text-3xl shadow-[0_15px_45px_rgba(0,0,0,.25)]" aria-hidden="true">
-        {open ? '💌' : '✉️'}
-      </span>
-      <p className="text-xs uppercase tracking-[0.18em] text-[#ffbfd1]">Open when…</p>
-      <h3 className="mt-2 font-display text-3xl leading-tight text-white">
-        {open ? 'You are never far from my heart.' : 'You miss me a little more.'}
-      </h3>
-      <p className="mt-2 max-w-xs text-sm leading-6 text-pink-100/70" aria-live="polite">
-        {open
-          ? 'Here is a small reminder: I am always cheering for you, wherever we are.'
-          : 'A little note to be opened on exactly the right day.'}
-      </p>
-      <button
-        type="button"
-        onClick={toggle}
-        className="mt-5 min-h-10 rounded-full border border-[#ffc2d6]/50 bg-[#ffc2d6]/15 px-5 text-sm font-semibold text-[#ffdae5] transition hover:bg-[#ffc2d6]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6]"
-      >
-        {open ? 'Close sample letter' : 'Open sample letter'}
-      </button>
-    </div>
-  );
-}
-
-function WatchPreview({ playing, toggle }) {
-  return (
-    <div className="flex min-h-[275px] flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[#0a0b17] p-4 sm:min-h-[308px] sm:p-5">
-      <div className="relative grid min-h-[166px] flex-1 place-items-center overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_45%_30%,#714c79,#26233e_52%,#111426)]">
-        <div className="absolute left-[15%] top-[25%] h-20 w-20 rounded-full border border-white/10" aria-hidden="true" />
-        <div className="absolute right-[12%] bottom-[14%] h-32 w-32 rounded-full border border-[#f9c7e0]/10" aria-hidden="true" />
-        <div className="relative z-10 text-center">
-          <Clapperboard className="mx-auto mb-2 text-[#ffc4d8]" size={29} aria-hidden="true" />
-          <p className="font-display text-3xl text-white">Movie night, together.</p>
-          <p className="mt-1 text-xs text-pink-100/65">Same moment. Two different places.</p>
-        </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <div aria-live="polite">
-          <p className="text-sm font-semibold text-white">{playing ? 'Sample session started' : 'Your next movie night'}</p>
-          <p className="mt-1 text-xs text-pink-100/60">Illustrative preview · not a live stream</p>
-        </div>
-        <button
-          type="button"
-          onClick={toggle}
-          className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full bg-[#ffc2d6] px-4 text-xs font-bold text-[#210f25] transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6]"
-        >
-          <Play size={12} aria-hidden="true" />
-          {playing ? 'Reset demo' : 'Try demo'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function UniversePreview() {
-  const [activeTab, setActiveTab] = useState('chat');
-  const [starCount, setStarCount] = useState(8);
-  const [letterOpen, setLetterOpen] = useState(false);
-  const [watchPlaying, setWatchPlaying] = useState(false);
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <div id="preview" className="relative mx-auto w-full max-w-[530px] scroll-mt-24">
-      <div className="pointer-events-none absolute -inset-6 rounded-[40px] bg-[#c65a98]/10 blur-3xl" />
-      <div className="relative overflow-hidden rounded-[30px] border border-white/15 bg-[#151022]/95 p-3 shadow-[0_32px_85px_rgba(0,0,0,.5)] sm:rounded-[36px] sm:p-4">
-        <div className="mb-4 flex items-center justify-between gap-2 px-1 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#ef9fbd]/15 text-[#ffbed2]">
-              <Heart size={15} fill="currentColor" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold text-white">A little look inside</p>
-              <p className="text-[10px] text-pink-100/55">Explore before you sign up</p>
-            </div>
-          </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[10px] text-pink-100/70">SAMPLE</span>
-        </div>
-        <div role="group" aria-label="Explore feature previews" className="mb-3 grid grid-cols-4 gap-1 rounded-2xl bg-black/30 p-1">
-          {previewTabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={activeTab === key}
-              onClick={() => setActiveTab(key)}
-              className={
-                'flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:flex-row sm:gap-2 sm:text-xs ' +
-                (activeTab === key ? 'bg-[#ffc2d6] text-[#241224]' : 'text-pink-100/70 hover:bg-white/10 hover:text-white')
-              }
-            >
-              <Icon size={15} aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </div>
-        <motion.div
-          key={activeTab}
-          initial={reduceMotion ? false : { opacity: 0, y: 7 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          aria-label={previewTabs.find((tab) => tab.key === activeTab)?.label + ' sample'}
-          role="region"
-        >
-          {activeTab === 'chat' && <ChatPreview />}
-          {activeTab === 'sky' && (
-            <SkyPreview
-              count={starCount}
-              addStar={() => setStarCount((count) => count >= demoStars.length ? 8 : count + 1)}
-            />
-          )}
-          {activeTab === 'letters' && <LetterPreview open={letterOpen} toggle={() => setLetterOpen((open) => !open)} />}
-          {activeTab === 'watch' && <WatchPreview playing={watchPlaying} toggle={() => setWatchPlaying((playing) => !playing)} />}
-        </motion.div>
-        <p className="mt-3 px-1 text-center text-[11px] leading-5 text-pink-100/55">
-          Fictional example only. Your real conversations and memories are never shown here.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 function MobileFirstLook() {
   return (
@@ -354,7 +161,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <UniversePreview />
+          <GuestUniverseDemo />
         </section>
 
         <section id="features" className="scroll-mt-20 border-y border-white/[0.07] bg-black/15 px-4 py-16 sm:px-8 lg:py-24">
