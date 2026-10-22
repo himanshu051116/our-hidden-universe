@@ -265,7 +265,6 @@ export default function Landing() {
   const hasUniverse = Boolean(user && coupleCode);
   const primaryDestination = hasUniverse ? '/universe/home' : '/login?mode=signup';
   const primaryText = hasUniverse ? 'Open your universe' : 'Create our space';
-  const reduceMotion = useReducedMotion();
 
   return (
     <PageShell>
@@ -296,7 +295,7 @@ export default function Landing() {
         <section className="relative mx-auto grid w-full max-w-7xl items-center gap-9 px-4 pb-16 pt-7 sm:px-8 sm:pt-12 lg:grid-cols-[.96fr_1.04fr] lg:gap-12 lg:px-10 lg:pb-28 lg:pt-16">
           <div className="relative z-10">
             <motion.p
-              initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45 }}
               className="inline-flex items-center gap-2 rounded-full border border-[#ffc2d6]/20 bg-[#ffc2d6]/[0.07] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.17em] text-[#ffc2d6] sm:text-xs"
@@ -305,7 +304,7 @@ export default function Landing() {
               A little world, just for two
             </motion.p>
             <motion.h1
-              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, delay: 0.07 }}
               className="mt-5 max-w-[640px] font-display text-[clamp(2.85rem,6vw,5.4rem)] font-semibold leading-[.99] tracking-[-0.025em] text-white"
@@ -314,7 +313,7 @@ export default function Landing() {
             </motion.h1>
             <MobileFirstLook />
             <motion.p
-              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, delay: 0.14 }}
               className="mt-4 max-w-lg text-sm leading-7 text-pink-100/80 sm:mt-5 sm:text-base sm:leading-8"
@@ -323,24 +322,25 @@ export default function Landing() {
             </motion.p>
 
             <motion.div
-              initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, delay: 0.2 }}
               className="mt-5 flex flex-wrap items-center gap-2.5 sm:mt-7 sm:gap-3"
             >
               <Link
                 to={primaryDestination}
-                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[#ffc2d6] px-6 text-sm font-bold text-[#271426] shadow-[0_10px_35px_rgba(255,182,200,.2)] transition hover:-translate-y-0.5 hover:bg-[#ffe0e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:flex-none"
+                className="inline-flex min-h-12 flex-[1.3] items-center justify-center gap-2 rounded-full bg-[#ffc2d6] px-3.5 sm:px-6 text-sm font-bold text-[#271426] shadow-[0_10px_35px_rgba(255,182,200,.2)] transition hover:-translate-y-0.5 hover:bg-[#ffe0e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:flex-none"
               >
                 {primaryText}
                 <ArrowRight size={17} aria-hidden="true" />
               </Link>
               <a
                 href="#preview"
-                className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full border border-white/20 px-6 text-sm font-semibold text-pink-100 transition hover:border-[#ffc2d6]/60 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:w-auto"
+                className="inline-flex min-h-12 flex-[0.7] items-center justify-center gap-2 rounded-full border border-white/20 px-3 sm:px-6 text-sm font-semibold text-pink-100 transition hover:border-[#ffc2d6]/60 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffc2d6] sm:w-auto"
               >
                 <Play size={15} aria-hidden="true" />
-                Try the preview
+                <span className="sm:hidden">Preview</span>
+                <span className="hidden sm:inline">Try the preview</span>
               </a>
             </motion.div>
             <p className="mt-4 flex items-center gap-2 text-xs leading-5 text-pink-100/60">
