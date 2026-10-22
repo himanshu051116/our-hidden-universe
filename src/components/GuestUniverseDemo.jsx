@@ -258,7 +258,24 @@ function formatTime(value) {
 
 function TogetherDemo({ active }) {
   const [seconds, setSeconds] = useState(0);
+  const [youReady, setYouReady] = useState(false);
+  const [partnerReady, setPartnerReady] = useState(false);
+  const [countdown, setCountdown] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const everyoneReady = youReady && partnerReady;
+
+  useEffect(() => {
+    if (!active || countdown === null || countdown <= 0) return undefined;
+    const timer = window.setInterval(() => setCountdown((count) => Math.max(0, count - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [active, countdown]);
+
+  useEffect(() => {
+    if (active && countdown === 0) {
+      setCountdown(null);
+      setIsPlaying(true);
+    }
+  }, [active, countdown]);
 
   useEffect(() => {
     if (!active || !isPlaying) return undefined;
@@ -278,34 +295,74 @@ function TogetherDemo({ active }) {
     if (!active || seconds >= durationSeconds) setIsPlaying(false);
   }, [active, seconds]);
 
-  function toggle() {
+  function updateReady(person) {
+    if (person === 'you') setYouReady((ready) => !ready);
+    else setPartnerReady((ready) => !ready);
+    setCountdown(null);
+    setIsPlaying(false);
+  }
+
+  function controlPlayback() {
+    if (!everyoneReady) return;
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
     if (seconds >= durationSeconds) setSeconds(0);
-    setIsPlaying((playing) => !playing);
+    if (seconds > 0 && seconds < durationSeconds) setIsPlaying(true);
+    else setCountdown(3);
   }
 
   function reset() {
     setIsPlaying(false);
     setSeconds(0);
+    setCountdown(null);
+    setYouReady(false);
+    setPartnerReady(false);
   }
 
   const progress = seconds / durationSeconds * 100;
 
   return (
-    <div className="flex h-[375px] min-h-0 flex-col rounded-[22px] border border-white/10 bg-[#0a0b17] p-3 sm:h-[350px] sm:p-4">
-      <div className="rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_55%_10%,#754d79,#27243b_70%,#111426)] px-3 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#ffd0e0]">A shared movie-night timeline</p>
-        <h3 className="mt-1 font-display text-[25px] leading-tight text-white">Press play. Stay in sync.</h3>
-        <p className="mt-0.5 text-[10px] text-pink-100/65">Simulated playback, not a real video stream</p>
+    <div className="flex h-[435px] min-h-0 flex-col gap-2 rounded-[22px] border border-white/10 bg-[#0a0b17] p-3 sm:h-[420px] sm:p-4">
+      <div className="rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_55%_10%,#754d79,#27243b_70%,#111426)] px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#ffd0e0]">Watch Together · Guest simulation</p>
+        <h3 className="mt-1 font-display text-[24px] leading-tight text-white">Ready first. Then press play.</h3>
+        <p className="mt-0.5 text-[10px] text-pink-100/65">Two sample players share one timeline; no video is streamed.</p>
       </div>
-      <div className="mt-3 grid flex-1 grid-cols-2 gap-2" aria-label="Two synchronized sample screens">
+      <div role="group" aria-label="Sample partner readiness" className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          aria-pressed={youReady}
+          onClick={() => updateReady('you')}
+          className={'min-h-10 rounded-xl border px-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffc2d6] ' +
+            (youReady ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-200' : 'border-white/15 text-pink-100/80')}
+        >
+          {youReady ? '✓ You: Ready' : '○ Mark you ready'}
+        </button>
+        <button
+          type="button"
+          aria-pressed={partnerReady}
+          onClick={() => updateReady('partner')}
+          className={'min-h-10 rounded-xl border px-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffc2d6] ' +
+            (partnerReady ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-200' : 'border-white/15 text-pink-100/80')}
+        >
+          {partnerReady ? '✓ Partner: Ready' : '○ Mark partner ready'}
+        </button>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2" aria-label="Two synchronized sample screens">
         {['You', 'Partner'].map((person) => (
-          <div key={person} className="flex min-h-0 flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#17162b] p-3">
+          <div key={person} className="flex min-h-0 flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#17162b] p-2.5">
             <div className="flex items-center gap-1.5 text-[11px] text-[#ffe0eb]">
               <span className={'h-1.5 w-1.5 rounded-full ' + (isPlaying ? 'bg-emerald-300' : 'bg-pink-100/40')} />
               {person}
             </div>
             <div className="text-center">
-              {isPlaying ? <Play size={22} className="mx-auto text-[#ffbfd7]" fill="currentColor" aria-hidden="true" /> : <Pause size={22} className="mx-auto text-[#ffbfd7]" aria-hidden="true" />}
+              {countdown !== null
+                ? <p className="font-display text-3xl text-[#ffbfd7]" aria-live="polite">{countdown}</p>
+                : isPlaying
+                  ? <Play size={21} className="mx-auto text-[#ffbfd7]" fill="currentColor" aria-hidden="true" />
+                  : <Pause size={21} className="mx-auto text-[#ffbfd7]" aria-hidden="true" />}
               <p className="mt-1 font-mono text-lg text-white">{formatTime(seconds)}</p>
             </div>
             <div role="progressbar" aria-label={person + ' sample playback progress'} aria-valuemin={0} aria-valuemax={60} aria-valuenow={seconds} className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
@@ -314,20 +371,27 @@ function TogetherDemo({ active }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="max-w-[45%] text-xs text-pink-100/70" aria-live="polite">
-          {seconds >= durationSeconds ? 'Sample finished' : isPlaying ? 'Both timelines are playing' : seconds ? 'Both timelines paused' : 'Ready to start'}
+      <div className="flex items-center justify-between gap-2">
+        <p className="max-w-[46%] text-[11px] leading-4 text-pink-100/75" aria-live="polite">
+          {countdown !== null ? 'Starting together in ' + countdown
+            : !everyoneReady ? 'Waiting for both Ready checks'
+              : seconds >= durationSeconds ? 'Sample finished'
+                : isPlaying ? 'Both timelines are playing'
+                  : seconds ? 'Both timelines paused' : 'Both ready · start together'}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <button type="button" onClick={reset} className={secondaryClass} aria-label="Restart sample playback">
             <RotateCcw size={13} aria-hidden="true" /> Reset
           </button>
-          <button type="button" onClick={toggle} className={actionClass}>
+          <button type="button" onClick={controlPlayback} disabled={!everyoneReady || countdown !== null} className={actionClass}>
             {isPlaying ? <Pause size={13} aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}
-            {isPlaying ? 'Pause' : seconds ? 'Resume' : 'Play sample'}
+            {isPlaying ? 'Pause' : seconds ? 'Resume' : 'Start together'}
           </button>
         </div>
       </div>
+      <p className="text-center text-[10px] text-pink-100/50">
+        Both clocks follow one simulated source. Real network sync depends on each device.
+      </p>
     </div>
   );
 }
