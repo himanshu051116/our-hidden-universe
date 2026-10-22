@@ -60,7 +60,14 @@ test('together preview advances two timelines in sync; pause, resume and reset w
   await page.clock.install();
   await page.goto('/');
   await page.getByRole('tab', { name: 'Together' }).click();
-  await page.getByRole('button', { name: 'Play sample' }).click();
+  await expect(page.getByRole('button', { name: 'Start together' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Mark you ready' }).click();
+  await expect(page.getByRole('button', { name: 'Start together' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Mark partner ready' }).click();
+  await expect(page.getByRole('button', { name: 'Start together' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start together' }).click();
+  await expect(page.getByText('Starting together in 3')).toBeVisible();
+  await page.clock.runFor(3100);
   await page.clock.runFor(3200);
   await expect(page.getByRole('progressbar', { name: 'You sample playback progress' })).toHaveAttribute('aria-valuenow', '3');
   await expect(page.getByRole('progressbar', { name: 'Partner sample playback progress' })).toHaveAttribute('aria-valuenow', '3');
@@ -75,6 +82,7 @@ test('together preview advances two timelines in sync; pause, resume and reset w
   await expect(page.getByText('Both timelines paused')).toBeVisible();
   await page.getByRole('button', { name: 'Restart sample playback' }).click();
   await expect(page.getByRole('progressbar', { name: 'You sample playback progress' })).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.getByRole('button', { name: 'Start together' })).toBeDisabled();
 });
 
 test('mobile experience is interactive and has no horizontal overflow or wrapped primary CTA', async ({ page }) => {
