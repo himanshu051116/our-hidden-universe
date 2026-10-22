@@ -206,6 +206,11 @@ test.describe('OHS 1:1 call smoke', () => {
       // Small-screen calls float above the movie instead of pushing it offscreen.
       await caller.setViewportSize({ width: 390, height: 844 });
       await expect.poll(() => callerPanel.evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
+      await expect.poll(() => callerPanel.evaluate((el) => el.parentElement === document.body)).toBe(true);
+      const topBeforeScroll = (await callerPanel.boundingBox())?.y;
+      await caller.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const topAfterScroll = (await callerPanel.boundingBox())?.y;
+      expect(Math.abs(topBeforeScroll - topAfterScroll)).toBeLessThan(4);
       const beforeMove = await callerPanel.boundingBox();
       await callerPanel.getByRole('button', { name: 'Move floating call to other side' }).click();
       const afterMove = await callerPanel.boundingBox();
