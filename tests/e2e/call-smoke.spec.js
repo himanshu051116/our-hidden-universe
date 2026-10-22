@@ -167,4 +167,60 @@ test.describe('OHS 1:1 call smoke', () => {
     }
   });
 
+  test('video call stays visible beside Watch Together and survives switching layouts', async ({ browser }) => {
+    const callerContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
+    const calleeContext = await browser.newContext({ permissions: ['camera', 'microphone'] });
+    const caller = await callerContext.newPage();
+    const callee = await calleeContext.newPage();
+
+    try {
+      await Promise.all([
+        login(caller, process.env.OHS_TEST_USER_A_EMAIL, process.env.OHS_TEST_USER_A_PASSWORD, process.env.OHS_TEST_COUPLE_CODE),
+        login(callee, process.env.OHS_TEST_USER_B_EMAIL, process.env.OHS_TEST_USER_B_PASSWORD, process.env.OHS_TEST_COUPLE_CODE),
+      ]);
+      await Promise.all([
+        caller.goto('/universe/together/watch'),
+        callee.goto('/universe/together/watch'),
+      ]);
+
+      const callerPanel = caller.getByRole('complementary', { name: 'Watch Together video call' });
+      const calleePanel = callee.getByRole('complementary', { name: 'Watch Together video call' });
+      await expect(callerPanel.getByRole('button', { name: 'Video call' })).toBeEnabled();
+      await callerPanel.getByRole('button', { name: 'Video call' }).click();
+      await expect(callee.getByRole('dialog', { name: /incoming/i })).toBeVisible({ timeout: 20_000 });
+      await callee.getByRole('button', { name: 'Answer' }).click();
+
+      await expect(caller.locator('[data-watch-call-status="connected"]')).toBeVisible({ timeout: 40_000 });
+      await expect(callee.locator('[data-watch-call-status="connected"]')).toBeVisible({ timeout: 40_000 });
+      await expect(caller.locator('[data-call-status="connected"]')).toHaveCount(0);
+      await expect(caller.getByRole('heading', { name: /One movie. Two screens. One call/i })).toBeVisible();
+
+      for (const page of [caller, callee]) {
+        await expect.poll(() => page.evaluate(() => {
+          const streamElement = document.querySelector('video[aria-label="Partner video"]');
+          return !!streamElement?.srcObject?.getVideoTracks()
+            .some((track) => track.readyState === 'live');
+        }), { timeout: 15_000 }).toBe(true);
+      }
+
+      await callerPanel.getByRole('button', { name: 'Mute microphone' }).click();
+      await expect(callerPanel.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
+      await callerPanel.getByRole('button', { name: 'Turn camera off' }).click();
+      await expect(callerPanel.getByRole('button', { name: 'Turn camera on' })).toBeVisible();
+      await callerPanel.getByRole('button', { name: 'Turn camera on' }).click();
+
+      // The global call provider remains alive across route transitions.
+      await caller.goto('/universe/chat');
+      await expect(caller.locator('[data-call-status="connected"]')).toBeVisible({ timeout: 15_000 });
+      await caller.getByRole('button', { name: 'Watch Together while on this call' }).click();
+      await expect(caller).toHaveURL(/\/universe\/together\/watch$/);
+      await expect(caller.locator('[data-watch-call-status="connected"]')).toBeVisible();
+
+      await callerPanel.getByRole('button', { name: 'End call' }).click();
+      await expect(callerPanel.getByRole('button', { name: 'Video call' })).toBeEnabled({ timeout: 12_000 });
+    } finally {
+      await Promise.all([callerContext.close(), calleeContext.close()]);
+    }
+  });
+
 });
