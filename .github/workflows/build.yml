@@ -50,7 +50,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Use runner Chrome for guest smoke tests
+        shell: bash
+        run: |
+          CHROME_PATH="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$CHROME_PATH" ]; then
+            echo "::error::Chrome is not installed on the runner."
+            exit 1
+          fi
+          echo "OHS_CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
       - run: npm run build
       - name: Launch preview for guest smoke tests
         run: |
