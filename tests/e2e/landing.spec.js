@@ -41,3 +41,18 @@ test('existing users can follow the join-code flow directly', async ({ page }) =
   await expect(page).toHaveURL(/\/login\?mode=login/);
   await expect(page.getByLabel('Couple code', { exact: true })).toBeVisible();
 });
+
+
+test('capture first-visit desktop and mobile layout screenshots', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Chat sample' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/landing-desktop-first-fold.png' });
+  await page.screenshot({ path: 'test-results/landing-desktop-full.png', fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /Feel closer, even from miles away/i })).toBeVisible();
+  await page.screenshot({ path: 'test-results/landing-mobile-first-fold.png' });
+  await page.screenshot({ path: 'test-results/landing-mobile-full.png', fullPage: true });
+});
