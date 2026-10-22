@@ -203,6 +203,18 @@ test.describe('OHS 1:1 call smoke', () => {
         }), { timeout: 15_000 }).toBe(true);
       }
 
+      // Small-screen calls float above the movie instead of pushing it offscreen.
+      await caller.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => callerPanel.evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
+      const beforeMove = await callerPanel.boundingBox();
+      await callerPanel.getByRole('button', { name: 'Move floating call to other side' }).click();
+      const afterMove = await callerPanel.boundingBox();
+      expect(beforeMove && afterMove && Math.abs(beforeMove.x - afterMove.x) > 40).toBeTruthy();
+      await callerPanel.getByRole('button', { name: 'Compact' }).click();
+      await expect(callerPanel.getByRole('video', { name: 'Partner video' })).toBeVisible();
+      await callerPanel.getByRole('button', { name: 'Expand' }).click();
+      await caller.setViewportSize({ width: 1280, height: 800 });
+
       await callerPanel.getByRole('button', { name: 'Mute microphone' }).click();
       await expect(callerPanel.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
       await callerPanel.getByRole('button', { name: 'Turn camera off' }).click();
