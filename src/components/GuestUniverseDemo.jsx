@@ -215,7 +215,7 @@ function LettersDemo() {
   const letter = letters[selected];
 
   return (
-    <div className="flex h-[375px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_34%,#452a4d,#17101e_70%,#0d0b18)] p-3 sm:h-[350px] sm:p-4">
+    <div className="flex h-[435px] min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_34%,#452a4d,#17101e_70%,#0d0b18)] p-3 sm:h-[350px] sm:p-4">
       <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-[#ffbfd1]">Open when…</p>
       <div aria-label="Choose a sample letter" role="group" className="mt-2 flex flex-wrap gap-2">
         {letters.map((item, index) => (
