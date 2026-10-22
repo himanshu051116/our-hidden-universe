@@ -1,8 +1,9 @@
 import {
-  Camera, CameraOff, Headphones, Mic, MicOff, Phone,
+  Camera, CameraOff, Headphones, Maximize2, Mic, MicOff, Phone,
   PhoneOff, RefreshCw, Signal, Video,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCall } from '../../calls/CallContext.jsx';
 import { CALL_STATUS } from '../../calls/callState.js';
 
@@ -47,6 +48,7 @@ function StatusIndicator({ call }) {
 const buttonBase = 'grid h-11 w-11 shrink-0 place-items-center rounded-full border transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blush disabled:cursor-not-allowed disabled:opacity-35';
 
 export default function WatchCallPanel() {
+  const navigate = useNavigate();
   const {
     call, partner, roomMemberCount, localStream, remoteStream, startCall,
     endCall, toggleMute, toggleCamera, flipCamera,
@@ -245,6 +247,16 @@ export default function WatchCallPanel() {
                 <PhoneOff size={20} />
               </button>
             </div>
+            {expanded && connected ? (
+              <button
+                type="button"
+                onClick={() => navigate('/universe/chat')}
+                className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-3 text-xs font-semibold text-pink-100/75 transition hover:border-blush/40 hover:text-white"
+              >
+                <Maximize2 size={14} aria-hidden="true" />
+                Full-screen call
+              </button>
+            ) : null}
             {call.warning ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{call.warning}</p> : null}
           </>
         ) : (
