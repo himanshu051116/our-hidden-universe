@@ -46,7 +46,7 @@ export function estimatedSharedTime(sync, now = Date.now()) {
   if (!sampleAt || Math.abs(now - sampleAt) > MAX_SAMPLE_AGE_MS) return null;
   const position = Math.max(0, Number(sync.currentTime));
   if (!sync.playing || sync.buffering) return position;
-  return position + Math.max(0, Math.min(8, now - sampleAt) / 1000);
+  return position + Math.max(0, Math.min(8, (now - sampleAt) / 1000));
 }
 
 export function driftCorrection(expected, actual, native = true) {
