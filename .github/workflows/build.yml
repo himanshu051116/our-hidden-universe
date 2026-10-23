@@ -32,12 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare security lockfile refresh for review
-        run: |
-          cp package-lock.json /tmp/ohs-lock-before.json
-          npm audit fix --package-lock-only --ignore-scripts --no-fund || true
-          node scripts/security-lock-diff.mjs
-
       - name: Audit runtime dependencies for critical advisories
         run: npm audit --omit=dev --audit-level=critical
 
