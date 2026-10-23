@@ -992,6 +992,7 @@ export function CallProvider({ children }) {
 
   function toggleMute() {
     const stream = localStreamRef.current;
+    if (!stream?.getAudioTracks?.().some((track) => track.readyState === 'live')) return;
     setState((previous) => {
       const muted = !previous.muted;
       setTrackEnabled(stream, 'audio', !muted);
@@ -1001,6 +1002,7 @@ export function CallProvider({ children }) {
 
   function toggleCamera() {
     const stream = localStreamRef.current;
+    if (!stream?.getVideoTracks?.().some((track) => track.readyState === 'live')) return;
     setState((previous) => {
       const cameraEnabled = !previous.cameraEnabled;
       setTrackEnabled(stream, 'video', cameraEnabled);
@@ -1009,7 +1011,9 @@ export function CallProvider({ children }) {
   }
 
   async function flipCamera() {
-    if (!localStreamRef.current || !peerRef.current) return;
+    if (!localStreamRef.current || !peerRef.current) {
+      throw new Error('Wait for your camera to connect before switching it.');
+    }
 
     const result = await switchCamera(
       localStreamRef.current,
