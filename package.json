@@ -59,6 +59,7 @@
   "overrides": {
     "jwks-rsa": {
       "jose": "4.15.9"
-    }
+    },
+    "@grpc/grpc-js": "1.14.6"
   }
 }
