@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { AuthContext } from './authContextBase.jsx';
+export { useAuth } from './authContextBase.jsx';
 import {
   createUserWithEmailAndPassword,
   deleteUser,
@@ -16,7 +18,6 @@ import {
 } from 'firebase/firestore';
 import { auth, db, firebaseEnabled } from '../services/firebaseCore';
 
-const AuthContext = createContext(null);
 const demoUser = { uid: 'demo-lover', email: 'demo@ourhiddenuniverse.app', displayName: 'You' };
 const roomStorageKey = 'ohu-couple-room';
 
@@ -322,6 +323,3 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
