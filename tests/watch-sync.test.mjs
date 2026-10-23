@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   timestampMs, readyMembers, getCommandDelay, commandPlaybackPosition,
-  estimatedSharedTime, driftCorrection,
+  estimatedSharedTime, driftCorrection, shouldResetWatchSession,
 } from '../src/services/watchSyncMath.js';
 
 test('readiness requires two fresh distinct members of the same session', () => {
@@ -56,4 +56,17 @@ test('small native-video drift gets rate adjustment, large drift seeks', () => {
   assert.equal(big.position, 18);
   assert.equal(driftCorrection(18, 17.2, false).kind, 'seek');
   assert.equal(driftCorrection(null, NaN).kind, 'none');
+});
+
+test('second partner selecting the matching local file preserves watch session', () => {
+  const current = { sessionId: 'movie-a', sourceType: 'local', sourceUrl: '' };
+  const matching = { sourceType: 'local', sourceUrl: '' };
+  assert.equal(shouldResetWatchSession(current, matching), false);
+  assert.equal(shouldResetWatchSession(current, matching, true), true);
+  assert.equal(shouldResetWatchSession(current, { sourceType: 'youtube', sourceUrl: 'https://youtu.be/demo' }), true);
+  assert.equal(shouldResetWatchSession({ ...current, sessionId: '' }, matching), true);
+  assert.equal(shouldResetWatchSession(
+    { sessionId: 'online-a', sourceType: 'youtube', sourceUrl: 'v1' },
+    { sourceType: 'youtube', sourceUrl: 'v1' },
+  ), false);
 });
