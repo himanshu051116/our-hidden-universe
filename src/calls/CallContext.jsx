@@ -817,7 +817,16 @@ export function CallProvider({ children }) {
       const offer = await createAndSetOffer(peer);
       if (operation !== operationRef.current) return;
       await writeOffer(coupleId, callId, offer);
-      if (operation !== operationRef.current) return;
+      if (operation !== operationRef.current) {
+        // The initial offer may finish uploading after the user hung up.
+        // Restore the terminal status so a late network response cannot ring.
+        updateCallStatus(coupleId, callId, 'ended', {
+          endedAt: serverTimestamp(), endedBy: user.uid,
+          endReason: 'cancelled-during-setup',
+        }).catch(() => {});
+        cleanupCallSignaling(coupleId, callId).catch(() => {});
+        return;
+      }
 
       sendIncomingCallPush(coupleId, callId).catch(() => {});
 
@@ -1051,28 +1060,28 @@ export function CallProvider({ children }) {
     return result;
   }
 
-  const value = useMemo(
-    () => ({
-      call: state,
-      incomingCall,
-      partner,
-      roomMemberCount: members.length,
-      localStream,
-      remoteStream,
-      startCall,
-      answerCall,
-      declineCall,
-      endCall,
-      toggleMute,
-      toggleCamera,
-      flipCamera,
-      toggleDataSaver,
-      notificationStatus,
-      enableCallNotifications,
-      refreshCallNotificationStatus,
-    }),
-    [state, incomingCall, partner, members.length, localStream, remoteStream, notificationStatus],
-  );
+  // The action functions close over the current signed-in member and room.
+  // Memoizing without those functions as dependencies could expose stale
+  // signaling callbacks after an account/room transition.
+  const value = {
+    call: state,
+    incomingCall,
+    partner,
+    roomMemberCount: members.length,
+    localStream,
+    remoteStream,
+    startCall,
+    answerCall,
+    declineCall,
+    endCall,
+    toggleMute,
+    toggleCamera,
+    flipCamera,
+    toggleDataSaver,
+    notificationStatus,
+    enableCallNotifications,
+    refreshCallNotificationStatus,
+  };
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
 }
