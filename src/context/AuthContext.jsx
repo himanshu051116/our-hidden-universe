@@ -14,7 +14,7 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { auth, db, firebaseEnabled } from '../services/firebase';
+import { auth, db, firebaseEnabled } from '../services/firebaseCore';
 
 const AuthContext = createContext(null);
 const demoUser = { uid: 'demo-lover', email: 'demo@ourhiddenuniverse.app', displayName: 'You' };
