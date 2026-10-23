@@ -41,6 +41,9 @@ jobs:
       - name: Build production app
         run: npm run build
 
+      - name: Enforce first-visit bundle budget
+        run: node scripts/check-bundle-size.mjs
+
 
   landing-e2e:
     name: Guest landing browser smoke
