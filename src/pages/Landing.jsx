@@ -12,7 +12,7 @@ import {
 import { Link } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import GuestUniverseDemo from '../components/GuestUniverseDemo.jsx';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/authContextBase.jsx';
 
 const features = [
   {
