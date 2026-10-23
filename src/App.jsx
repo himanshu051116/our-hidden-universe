@@ -45,7 +45,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-midnight text-white">
-      <StarField />
+      {location.pathname !== '/universe/together/watch' ? <StarField /> : null}
       <AnimatePresence mode="wait">
         <Suspense fallback={<RouteFallback />}>
           <Routes location={location} key={location.pathname}>
