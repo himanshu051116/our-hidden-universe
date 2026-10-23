@@ -30,13 +30,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          cp package-lock.json /tmp/ohs-lock-before.json
-          npm install --ignore-scripts --no-fund
-
-      - name: Generate patched lock diff for gRPC override
-        run: |
-          node scripts/security-lock-diff.mjs
+        run: npm ci
 
       - name: Audit runtime dependencies for critical advisories
         run: npm audit --omit=dev --audit-level=critical
