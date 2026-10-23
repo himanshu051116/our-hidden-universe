@@ -155,3 +155,20 @@ test('capture settled desktop, mobile and interaction screenshots', async ({ pag
   expect(sampleLetterIsUnclipped).toBe(true);
   await page.screenshot({ path: 'test-results/landing-demo-mobile-letter.png' });
 });
+
+test('guest entry avoids the calling runtime and excess ambient effects', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /Feel closer, even from miles away/i })).toBeVisible();
+  const guestMetrics = await page.evaluate(() => ({
+    starCount: document.querySelectorAll('.ambient-star').length,
+    callRuntimeDownloaded: performance.getEntriesByType('resource')
+      .some((resource) => /CallRuntime-|WatchCallPanel-|CallScreen-/.test(resource.name)),
+    opacity: Number(getComputedStyle(document.querySelector('.cinematic-bg')).opacity),
+  }));
+  expect(guestMetrics.starCount).toBeLessThanOrEqual(14);
+  expect(guestMetrics.callRuntimeDownloaded).toBe(false);
+  expect(guestMetrics.opacity).toBeGreaterThan(0.95);
+  await page.goto('/login?mode=login');
+  await expect(page.getByLabel('Couple code', { exact: true })).toBeVisible();
+});
