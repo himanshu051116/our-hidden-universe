@@ -1,27 +1,36 @@
 import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, useLocation } from 'react-router-dom';
 import App from './App.jsx';
-import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { GuestAuthProvider } from './context/authContextBase.jsx';
 import './styles/index.css';
 
-const CallRuntime = lazy(() => import('./calls/CallRuntime.jsx'));
+const PrivateRuntime = lazy(() => import('./PrivateRuntime.jsx'));
 
-function SessionRuntime() {
-  const { user, loading } = useAuth();
+function RootRuntime() {
+  const location = useLocation();
+  // Returning members need session restoration on "/", but a first-time
+  // guest should not download Firebase, call signaling or notification code.
+  const savedRoom = Boolean(
+    localStorage.getItem('ohu-couple-room') || localStorage.getItem('ohu-demo-session')
+  );
+  const privateRoute = location.pathname !== '/' || savedRoom;
 
-  // Guest landing/login must not download active-calling dependencies.
-  if (!user || loading) return <App />;
+  if (!privateRoute) {
+    return (
+      <GuestAuthProvider>
+        <App />
+      </GuestAuthProvider>
+    );
+  }
 
   return (
     <Suspense fallback={
       <div className="grid min-h-screen place-items-center bg-midnight px-6 text-center text-sm text-pink-100/75" role="status">
-        Opening your private universe…
+        Opening your universe…
       </div>
     }>
-      <CallRuntime>
-        <App />
-      </CallRuntime>
+      <PrivateRuntime />
     </Suspense>
   );
 }
@@ -29,9 +38,7 @@ function SessionRuntime() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <SessionRuntime />
-      </AuthProvider>
+      <RootRuntime />
     </BrowserRouter>
   </React.StrictMode>,
 );
