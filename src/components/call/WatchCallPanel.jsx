@@ -84,6 +84,8 @@ export default function WatchCallPanel() {
   const active = activeStatuses.has(call.status);
   const canStart = call.status === CALL_STATUS.IDLE || call.status === CALL_STATUS.ENDED;
   const audioOnly = call.type === 'audio';
+  const hasMicrophone = Boolean(localStream?.getAudioTracks?.().some((track) => track.readyState === 'live'));
+  const hasCamera = Boolean(localStream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
 
   useEffect(() => {
     const element = remoteRef.current;
@@ -252,7 +254,7 @@ export default function WatchCallPanel() {
               <button
                 type="button"
                 onClick={toggleMute}
-                disabled={!localStream}
+                disabled={!hasMicrophone}
                 className={buttonBase + (call.muted ? ' border-white/25 bg-white text-midnight' : ' border-white/15 bg-white/10 text-white')}
                 aria-label={call.muted ? 'Unmute microphone' : 'Mute microphone'}
               >
@@ -263,7 +265,7 @@ export default function WatchCallPanel() {
                   <button
                     type="button"
                     onClick={toggleCamera}
-                    disabled={!localStream}
+                    disabled={!hasCamera}
                     className={buttonBase + (!call.cameraEnabled ? ' border-white/25 bg-white text-midnight' : ' border-white/15 bg-white/10 text-white')}
                     aria-label={call.cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
                   >
@@ -272,7 +274,7 @@ export default function WatchCallPanel() {
                   <button
                     type="button"
                     onClick={switchLocalCamera}
-                    disabled={!localStream}
+                    disabled={!hasCamera}
                     className={buttonBase + ' border-white/15 bg-white/10 text-white'}
                     aria-label="Switch camera"
                   >
