@@ -59,3 +59,14 @@ export function driftCorrection(expected, actual, native = true) {
   const rate = Math.max(0.94, Math.min(1.06, 1 + drift * 0.1));
   return { kind: 'rate', drift, rate };
 }
+
+/**
+ * Re-selecting a matching local file on the second device should not replace
+ * the shared session and invalidate the first device's Ready state.
+ */
+export function shouldResetWatchSession(previous, next, localFileWasReplaced = false) {
+  if (!previous?.sessionId) return true;
+  if (previous.sourceType !== next.sourceType) return true;
+  if ((previous.sourceUrl || '') !== (next.sourceUrl || '')) return true;
+  return next.sourceType === 'local' && localFileWasReplaced;
+}
