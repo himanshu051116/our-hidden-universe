@@ -19,45 +19,62 @@ export default function useNativeApp() {
     StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
     SplashScreen.hide().catch(() => {});
 
-    let backListener;
-    let urlListener;
-    let keyboardShowListener;
-    let keyboardHideListener;
+    let disposed = false;
+    const listeners = [];
+
+    async function register(promise) {
+      const listener = await promise;
+      if (disposed) {
+        await listener.remove().catch(() => {});
+        return;
+      }
+      listeners.push(listener);
+    }
 
     async function addListeners() {
-      backListener = await CapacitorApp.addListener('backButton', () => {
-        if (location.pathname !== '/' && location.pathname !== '/login' && location.pathname !== '/universe/home') {
-          navigate(-1);
-          return;
-        }
-        CapacitorApp.minimizeApp();
-      });
+      try {
+        await register(CapacitorApp.addListener('backButton', () => {
+          if (location.pathname !== '/' && location.pathname !== '/login' && location.pathname !== '/universe/home') {
+            navigate(-1);
+            return;
+          }
+          CapacitorApp.minimizeApp();
+        }));
+        if (disposed) return;
 
-      urlListener = await CapacitorApp.addListener('appUrlOpen', ({ url }) => {
-        try {
-          const openedUrl = new URL(url);
-          const route = `${openedUrl.hostname ? `/${openedUrl.hostname}` : ''}${openedUrl.pathname}`;
-          if (route && route !== '/') navigate(route);
-        } catch {
-          // Ignore malformed external links.
-        }
-      });
+        await register(CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+          try {
+            const openedUrl = new URL(url);
+            // HTTPS app links already contain a full pathname. Custom schemes
+            // such as ohu://universe/chat keep their route in the hostname.
+            const webLink = openedUrl.protocol === 'https:' || openedUrl.protocol === 'http:';
+            const route = webLink
+              ? openedUrl.pathname
+              : `/${openedUrl.hostname}${openedUrl.pathname}`;
+            if (route && route !== '/') navigate(route + openedUrl.search + openedUrl.hash);
+          } catch {
+            // Ignore malformed external links.
+          }
+        }));
+        if (disposed) return;
 
-      keyboardShowListener = await Keyboard.addListener('keyboardWillShow', () => {
-        document.body.classList.add('native-keyboard-open');
-      });
-      keyboardHideListener = await Keyboard.addListener('keyboardWillHide', () => {
-        document.body.classList.remove('native-keyboard-open');
-      });
+        await register(Keyboard.addListener('keyboardWillShow', () => {
+          document.body.classList.add('native-keyboard-open');
+        }));
+        if (disposed) return;
+        await register(Keyboard.addListener('keyboardWillHide', () => {
+          document.body.classList.remove('native-keyboard-open');
+        }));
+      } catch {
+        // Some platforms do not expose optional native listeners.
+      }
     }
 
     addListeners();
 
     return () => {
-      backListener?.remove();
-      urlListener?.remove();
-      keyboardShowListener?.remove();
-      keyboardHideListener?.remove();
+      disposed = true;
+      listeners.forEach((listener) => listener.remove().catch(() => {}));
       document.body.classList.remove('native-keyboard-open');
     };
   }, [location.pathname, navigate]);

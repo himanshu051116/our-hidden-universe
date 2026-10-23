@@ -10,7 +10,7 @@ export default function UniverseTogether() {
           Together
         </p>
         <h2 className="mt-1 font-display text-3xl leading-tight text-white sm:text-4xl">Do something together, even from far away.</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/65">Watch in sync or keep your reading progress side by side without digging through unrelated settings.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-pink-100/65">Watch in sync with a private video call, or keep your reading progress side by side.</p>
       </section>
 
       <Link
@@ -24,7 +24,7 @@ export default function UniverseTogether() {
             </span>
             <p className="mt-5 text-xs uppercase tracking-[0.18em] text-roseGold">Flagship activity</p>
             <h3 className="mt-1 font-display text-3xl text-white sm:text-4xl">Watch Together</h3>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-pink-100/68">Open a shared watch room, coordinate playback and get back in sync when one of you drifts.</p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-pink-100/68">Watch the same video while seeing and talking to your partner. Press Ready on both devices, start together, and keep playback aligned.</p>
           </div>
           <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-blush">
             Open Watch Together <ArrowRight size={16} className="transition group-hover:translate-x-1" />

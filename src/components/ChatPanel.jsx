@@ -332,7 +332,7 @@ export default function ChatPanel({ onMessageCountChange }) {
     } else if (latest?.senderId !== user?.uid) {
       setHasNewMessage(true);
     }
-  }, [visibleMessages.length, user?.uid, loadingOlder]);
+  }, [visibleMessages, user?.uid, loadingOlder]);
 
   useEffect(() => {
     if (!partner || !typingMap[partner.id] || !nearBottomRef.current) return;

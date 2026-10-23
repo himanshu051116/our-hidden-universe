@@ -1,4 +1,5 @@
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
+import { readyMembers } from './watchSyncMath.js';
 import { db, firebaseEnabled } from './firebase.js';
 
 const watchPartyKey = 'ohu-watch-party-v1';
@@ -24,6 +25,7 @@ export const emptyWatchParty = {
     updatedBy: '',
     updatedByName: '',
   },
+  readiness: {},
   sync: {
     currentTime: 0,
     playing: false,
@@ -45,6 +47,7 @@ function normalizeWatchParty(value = {}) {
       ...emptyWatchParty.playback,
       ...(value.playback || {}),
     },
+    readiness: value.readiness && typeof value.readiness === 'object' ? value.readiness : {},
     sync: {
       ...emptyWatchParty.sync,
       ...(value.sync || {}),
@@ -111,6 +114,7 @@ export async function saveWatchPartySetup(coupleId, user, setup, { resetPlayback
       sentAt,
       ...actor,
     };
+    payload.readiness = {};
     payload.sync = {
       currentTime: 0,
       playing: false,
@@ -154,11 +158,28 @@ export async function sendWatchPartyCommand(coupleId, user, command) {
     return playback;
   }
 
-  await setDoc(
-    doc(db, 'couples', coupleId, 'watchParty', 'current'),
-    { playback, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+  const roomRef = doc(db, 'couples', coupleId, 'watchParty', 'current');
+  if (playback.action === 'play') {
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(roomRef);
+      const active = snapshot.data();
+      if (!snapshot.exists() || active?.sessionId !== playback.sessionId) {
+        throw new Error('The watch session changed. Reload the room and try again.');
+      }
+      if (readyMembers(active.readiness, playback.sessionId).length < 2) {
+        throw new Error('Both partners must be ready before starting playback.');
+      }
+      transaction.set(roomRef, {
+        playback: { ...playback, committedAt: serverTimestamp() },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    });
+  } else {
+    await setDoc(roomRef, {
+      playback: { ...playback, committedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
   return playback;
 }
 
@@ -181,8 +202,38 @@ export async function sendWatchPartyHeartbeat(coupleId, user, state) {
 
   await setDoc(
     doc(db, 'couples', coupleId, 'watchParty', 'current'),
-    { sync, syncUpdatedAt: serverTimestamp() },
+    { sync: { ...sync, sampledAt: serverTimestamp() }, syncUpdatedAt: serverTimestamp() },
     { merge: true },
   );
   return sync;
+}
+
+
+/**
+ * Per-member readiness for the active watch session. Firestore merge preserves
+ * concurrent writes from two partners in different map keys.
+ * Periodic ready refreshes mark the member as recently connected; old sessions
+ * and abandoned devices cannot start the next watch session.
+ */
+export async function setWatchPartyReady(coupleId, user, sessionId, ready) {
+  if (!user?.uid || !sessionId) throw new Error('Choose a watch room first.');
+  const entry = {
+    ready: Boolean(ready),
+    sessionId,
+    seenAt: firebaseEnabled ? serverTimestamp() : Date.now(),
+  };
+  if (!firebaseEnabled || !coupleReady(coupleId, user)) {
+    const current = loadLocalWatchParty();
+    if (current.sessionId !== sessionId) return;
+    saveLocalWatchParty({
+      ...current,
+      readiness: { ...current.readiness, [user.uid]: entry },
+    });
+    return;
+  }
+  await setDoc(
+    doc(db, 'couples', coupleId, 'watchParty', 'current'),
+    { readiness: { [user.uid]: entry } },
+    { merge: true },
+  );
 }

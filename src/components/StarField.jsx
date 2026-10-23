@@ -6,7 +6,8 @@ import useLiteEffects from '../hooks/useLiteEffects.js';
 export default function StarField() {
   const [note, setNote] = useState('');
   const liteEffects = useLiteEffects();
-  const starCount = liteEffects ? 24 : 84;
+  // Ambient decoration should not contend with video playback on mobile GPUs.
+  const starCount = liteEffects ? 14 : 42;
 
   const stars = useMemo(
     () =>
@@ -23,23 +24,36 @@ export default function StarField() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {stars.map((star) => (
-        <button
-          key={star.id}
-          type="button"
-          onClick={() => setNote(hiddenNotes[star.id % hiddenNotes.length])}
-          className="ambient-star pointer-events-auto absolute rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]"
-          style={{
-            left: `${star.left}%`,
-            top: `${star.top}%`,
-            width: `${star.size}px`,
-            height: `${star.size}px`,
-            animationDelay: `${star.delay}s`,
-            animationDuration: `${star.duration}s`,
-          }}
-          aria-label="Reveal hidden note"
-        />
-      ))}
+      {stars.map((star) => {
+        const style = {
+          left: `${star.left}%`,
+          top: `${star.top}%`,
+          width: `${star.size}px`,
+          height: `${star.size}px`,
+          animationDelay: `${star.delay}s`,
+          animationDuration: `${star.duration}s`,
+        };
+        // One reachable easter egg rather than dozens of 2px clickable targets.
+        return star.id === 0 ? (
+          <button
+            key={star.id}
+            type="button"
+            onClick={() => setNote(hiddenNotes[0])}
+            className="pointer-events-auto absolute grid h-7 w-7 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blush"
+            style={{ left: `${star.left}%`, top: `${star.top}%` }}
+            aria-label="Reveal a hidden note"
+          >
+            <span className="ambient-star h-[3px] w-[3px] rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]" />
+          </button>
+        ) : (
+          <span
+            key={star.id}
+            aria-hidden="true"
+            className="ambient-star absolute rounded-full bg-white/90 shadow-[0_0_18px_rgba(255,255,255,.55)]"
+            style={style}
+          />
+        );
+      })}
 
       <AnimatePresence>
         {note && (

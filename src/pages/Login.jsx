@@ -1,14 +1,20 @@
 import { motion } from 'framer-motion';
 import { HeartHandshake, KeyRound, Mail, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { login } = useAuth();
-  const [mode, setMode] = useState('login');
+  const mode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
+  const changeMode = (nextMode) => {
+    setError('');
+    setForm((previous) => ({ ...previous, accessCode: '' }));
+    setSearchParams({ mode: nextMode }, { replace: true });
+  };
   const [form, setForm] = useState({ email: '', password: '', accessCode: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,6 +33,31 @@ export default function Login() {
     }
   }
 
+  const coupleCodeField = (
+          <label className="block">
+            <span className="mb-1 inline-flex items-center gap-2 text-xs text-pink-100/80">
+              <KeyRound size={12} />
+              {mode === 'signup' ? 'Couple code (optional)' : 'Couple code'}
+            </span>
+            <input
+              type="text"
+              required={mode !== 'signup'}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              value={form.accessCode}
+              onChange={(event) => setForm((previous) => ({ ...previous, accessCode: event.target.value }))}
+              className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
+              placeholder={mode === 'signup' ? 'Leave blank to generate one' : 'Enter the code your partner shared'}
+            />
+            {mode === 'signup' ? (
+              <p className="mt-1 text-[11px] leading-4 text-pink-100/60">
+                Leave this blank and OHS will generate a unique couple code you can share with your partner.
+              </p>
+            ) : null}
+          </label>
+  );
+
   return (
     <PageShell className="grid place-items-center px-4 py-12">
       <motion.div
@@ -38,16 +69,18 @@ export default function Login() {
           <ShieldCheck size={14} />
           Private access
         </p>
-        <h1 className="mt-2 font-display text-4xl text-white">Enter your hidden universe</h1>
+        <h1 className="mt-2 font-display text-4xl text-white">{mode === 'signup' ? 'Create your little universe' : 'Join your hidden universe'}</h1>
         <p className="mt-2 text-sm leading-6 text-pink-100/80">
-          Join your partner with a couple code, or create a new private universe for the two of you.
+          {mode === 'signup'
+            ? 'Start a private space for the two of you. We will generate a couple code you can share with your partner.'
+            : 'Already have a couple code? Enter it here to join your partner.'}
         </p>
 
         <div className="mt-4 flex rounded-full bg-black/35 p-1" role="group" aria-label="Choose how to enter OHS">
           <button
             type="button"
             aria-pressed={mode === 'login'}
-            onClick={() => setMode('login')}
+            onClick={() => changeMode('login')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'login' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
             Join universe
@@ -55,7 +88,7 @@ export default function Login() {
           <button
             type="button"
             aria-pressed={mode === 'signup'}
-            onClick={() => setMode('signup')}
+            onClick={() => changeMode('signup')}
             className={`flex-1 rounded-full px-4 py-2 text-sm transition ${mode === 'signup' ? 'bg-blush text-midnight' : 'text-pink-100'}`}
           >
             Create universe
@@ -101,28 +134,17 @@ export default function Login() {
             />
           </label>
 
-          <label className="block">
-            <span className="mb-1 inline-flex items-center gap-2 text-xs text-pink-100/80">
-              <KeyRound size={12} />
-              {mode === 'signup' ? 'Couple code (optional)' : 'Couple code'}
-            </span>
-            <input
-              type="text"
-              required={mode !== 'signup'}
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              value={form.accessCode}
-              onChange={(event) => setForm((previous) => ({ ...previous, accessCode: event.target.value }))}
-              className="w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
-              placeholder={mode === 'signup' ? 'Leave blank to generate one' : 'Enter the code your partner shared'}
-            />
-            {mode === 'signup' ? (
-              <p className="mt-1 text-[11px] leading-4 text-pink-100/60">
-                Leave this blank and OHS will generate a unique couple code you can share with your partner.
+          {mode === 'signup' ? (
+            <details className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
+              <summary className="cursor-pointer text-xs font-medium text-pink-100/85">
+                Customize your couple code (optional)
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-pink-100/60">
+                Your private code is generated automatically unless you choose your own.
               </p>
-            ) : null}
-          </label>
+              <div className="mt-3">{coupleCodeField}</div>
+            </details>
+          ) : coupleCodeField}
 
           {error ? <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p> : null}
 

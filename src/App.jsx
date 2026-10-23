@@ -1,7 +1,7 @@
 import { AnimatePresence } from 'framer-motion';
 import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import ProtectedRoute from './components/ProtectedRoute.jsx';
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute.jsx'));
 import StarField from './components/StarField.jsx';
 import useNativeApp from './hooks/useNativeApp.js';
 
@@ -38,14 +38,21 @@ export default function App() {
   useEffect(() => {
     if (!location.hash) return;
     const timer = window.setTimeout(() => {
-      document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // URL fragments are not guaranteed to be valid CSS selectors.
+      // Decode the ID safely rather than calling querySelector on untrusted hash text.
+      try {
+        const id = decodeURIComponent(location.hash.slice(1));
+        if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {
+        // Ignore invalid percent-encoded fragments without crashing navigation.
+      }
     }, 120);
     return () => window.clearTimeout(timer);
   }, [location.pathname, location.hash]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-midnight text-white">
-      <StarField />
+      {location.pathname !== '/universe/together/watch' ? <StarField /> : null}
       <AnimatePresence mode="wait">
         <Suspense fallback={<RouteFallback />}>
           <Routes location={location} key={location.pathname}>

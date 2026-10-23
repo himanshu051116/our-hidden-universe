@@ -3,19 +3,6 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-          if (id.includes('firebase')) return 'firebase';
-          if (id.includes('framer-motion')) return 'motion';
-          if (id.includes('react') || id.includes('scheduler')) return 'react-vendor';
-          return 'vendor';
-        },
-      },
-    },
-  },
   plugins: [
     react(),
     VitePWA({
@@ -25,7 +12,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,webp,woff2}'],
       },
       manifest: {
         name: 'Our Hidden Universe',

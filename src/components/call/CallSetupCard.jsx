@@ -1,5 +1,5 @@
 import { BellOff, BellRing, CheckCircle2, LoaderCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useCall } from '../../calls/CallContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { getCallNotificationReadiness } from '../../services/callNotificationService.js';
@@ -19,7 +19,7 @@ export default function CallSetupCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function refreshReadiness() {
+  const refreshReadiness = useCallback(async () => {
     if (!user?.uid || !coupleId) return;
     setReadiness((current) => ({ ...current, loading: true }));
     try {
@@ -28,11 +28,11 @@ export default function CallSetupCard() {
     } catch {
       setReadiness({ loading: false, status: 'unavailable', canEnable: false });
     }
-  }
+  }, [coupleId, user]);
 
   useEffect(() => {
     refreshReadiness();
-  }, [user?.uid, coupleId]);
+  }, [refreshReadiness]);
 
   const effectiveStatus = notificationStatus.enabled
     ? 'enabled'

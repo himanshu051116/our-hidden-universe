@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  Circle,
   Clapperboard,
   ExternalLink,
   FileVideo,
@@ -20,8 +21,10 @@ import {
   saveWatchPartySetup,
   sendWatchPartyCommand,
   sendWatchPartyHeartbeat,
+  setWatchPartyReady,
   subscribeWatchParty,
 } from '../services/watchPartyService.js';
+import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession } from '../services/watchSyncMath.js';
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -70,7 +73,10 @@ export default function WatchPartyPanel() {
   const [status, setStatus] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [manualTime, setManualTime] = useState('0:00');
-  const [syncState, setSyncState] = useState('Ready');
+  const [syncState, setSyncState] = useState('Waiting for sync');
+  const [readyBusy, setReadyBusy] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [clockNow, setClockNow] = useState(Date.now());
   const videoRef = useRef(null);
   const youtubeRef = useRef(null);
   const lastCommandRef = useRef('');
@@ -82,6 +88,7 @@ export default function WatchPartyPanel() {
   const playbackRateTimerRef = useRef(0);
   const previousSessionRef = useRef('');
   const localFileSessionRef = useRef('');
+  const replacedLocalFileRef = useRef(false);
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const youtubeVideoId = room.sourceType === 'youtube' ? extractYouTubeVideoId(room.sourceUrl) : '';
@@ -89,12 +96,57 @@ export default function WatchPartyPanel() {
   const hasYouTubePlayer = room.sourceType === 'youtube' && Boolean(youtubeVideoId);
   const hasSynchronizedPlayer = hasNativePlayer || hasYouTubePlayer;
   const configured = Boolean(room.title || room.sourceUrl || room.sourceType === 'local');
+  const readyIds = readyMembers(room.readiness, room.sessionId, clockNow);
+  const myReady = Boolean(user?.uid && readyIds.includes(user.uid));
+  const bothReady = readyIds.length >= 2;
+  const canReady = configured && (room.sourceType === 'external'
+    ? Boolean(room.sourceUrl) : hasSynchronizedPlayer && playerReady);
   const leaderIsMe = Boolean(user?.uid && room.playback?.updatedBy === user.uid);
   const leaderLabel = room.playback?.updatedBy
     ? leaderIsMe
       ? 'You lead sync'
       : `${room.playback.updatedByName || 'Partner'} leads sync`
     : 'Waiting for playback';
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setClockNow(Date.now()), 4_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
+    setPlayerReady(false);
+  }, [room.sessionId, room.sourceType, room.sourceUrl]);
+
+  // Readiness is a recent-session signal, not a permanent checkbox:
+  // refresh while this user is still on the player screen.
+  useEffect(() => {
+    if (!myReady || !room.sessionId || !user?.uid) return undefined;
+    const tick = window.setInterval(() => {
+      setWatchPartyReady(coupleId, user, room.sessionId, true).catch(() => {
+        setSyncState('Ready status reconnecting');
+      });
+    }, 15_000);
+    return () => window.clearInterval(tick);
+  }, [myReady, coupleId, user?.uid, room.sessionId]);
+
+  async function toggleReady() {
+    if (readyBusy) return;
+    if (!myReady && !canReady) {
+      showStatus('Wait for the video to load on your device before pressing Ready.');
+      return;
+    }
+    setReadyBusy(true);
+    try {
+      await setWatchPartyReady(coupleId, user, room.sessionId, !myReady);
+      if (myReady && room.playback?.action === 'play') await broadcast('pause');
+      setClockNow(Date.now());
+      showStatus(myReady ? 'Your Ready status is off.' : 'Ready! Waiting for your partner.');
+    } catch {
+      showStatus('Unable to update Ready status. Check the connection and retry.');
+    } finally {
+      setReadyBusy(false);
+    }
+  }
 
   function showStatus(message) {
     setStatus(message);
@@ -218,21 +270,18 @@ export default function WatchPartyPanel() {
     if (room.sessionId && command.sessionId !== room.sessionId) return undefined;
     lastCommandRef.current = command.commandId;
 
-    const delay = command.sentAt
-      ? Math.max(0, Number(command.delayMs) || 0)
-      : Math.max(0, (command.executeAt || Date.now()) - Date.now());
-
-    if (delay) startCountdown(delay);
+    const delay = getCommandDelay(command);
+    startCountdown(delay);
     window.clearTimeout(scheduledActionRef.current);
     scheduledActionRef.current = window.setTimeout(() => {
-      applyEmbeddedPlayback(command.action, command.currentTime);
+      applyEmbeddedPlayback(command.action, commandPlaybackPosition(command));
       const actor = command.updatedBy === user?.uid ? 'You' : command.updatedByName || 'Partner';
       showStatus(`${actor} ${command.action === 'play' ? 'started' : 'paused'} at ${formatTime(command.currentTime)}`);
       setSyncState(command.action === 'play' ? 'Auto-sync active' : 'Paused together');
     }, delay);
 
     return () => window.clearTimeout(scheduledActionRef.current);
-  }, [room.playback, room.sessionId, room.sourceType, user?.uid]);
+  }, [room.playback?.commandId, room.sessionId, room.sourceType, user?.uid]);
 
   useEffect(() => {
     window.clearInterval(heartbeatTimerRef.current);
@@ -245,7 +294,7 @@ export default function WatchPartyPanel() {
     };
 
     heartbeat();
-    heartbeatTimerRef.current = window.setInterval(heartbeat, 3000);
+    heartbeatTimerRef.current = window.setInterval(heartbeat, 2500);
     return () => window.clearInterval(heartbeatTimerRef.current);
   }, [coupleId, hasSynchronizedPlayer, leaderIsMe, room.playback?.action, room.sessionId, room.sourceType, user?.uid]);
 
@@ -265,35 +314,37 @@ export default function WatchPartyPanel() {
 
     if (sync.buffering && room.playback?.action === 'play') {
       applyEmbeddedPlayback('pause', sync.currentTime);
-      setSyncState('Waiting for partner');
+      setSyncState('Waiting for partner to buffer');
       return undefined;
     }
 
     if (!sync.playing || room.playback?.action !== 'play') return undefined;
 
-    const localTime = getPlayerCurrentTime();
-    const drift = Number(sync.currentTime || 0) - localTime;
-    const magnitude = Math.abs(drift);
+    const expected = estimatedSharedTime(sync);
+    if (expected === null) {
+      setSyncState('Checking fresh sync sample');
+      return undefined;
+    }
 
     if (!playerIsPlaying()) {
-      applyEmbeddedPlayback('play', sync.currentTime);
-      setSyncState('Playback recovered');
+      applyEmbeddedPlayback('play', expected);
+      setSyncState('Resuming with partner');
       return undefined;
     }
 
-    const hardDriftThreshold = room.sourceType === 'youtube' ? 1.2 : 1.8;
-    if (magnitude >= hardDriftThreshold) {
-      applyEmbeddedPlayback('play', sync.currentTime);
-      setSyncState(`Corrected ${magnitude.toFixed(1)}s drift`);
+    const correction = driftCorrection(expected, getPlayerCurrentTime(), hasNativePlayer);
+    if (correction.kind === 'seek') {
+      applyEmbeddedPlayback('play', correction.position);
+      setSyncState('Re-aligned playback');
       return undefined;
     }
 
-    if (hasNativePlayer && magnitude >= 0.7 && videoRef.current) {
+    if (correction.kind === 'rate' && videoRef.current) {
       window.clearTimeout(playbackRateTimerRef.current);
-      videoRef.current.playbackRate = drift > 0 ? 1.05 : 0.95;
+      videoRef.current.playbackRate = correction.rate;
       playbackRateTimerRef.current = window.setTimeout(() => {
         if (videoRef.current) videoRef.current.playbackRate = 1;
-      }, 2200);
+      }, 1700);
       setSyncState('Fine-tuning sync');
       return () => window.clearTimeout(playbackRateTimerRef.current);
     }
@@ -337,11 +388,7 @@ export default function WatchPartyPanel() {
       return;
     }
 
-    const sourceChanged =
-      !room.sessionId ||
-      room.sourceType !== nextDraft.sourceType ||
-      room.sourceUrl !== nextDraft.sourceUrl ||
-      nextDraft.sourceType === 'local';
+    const sourceChanged = shouldResetWatchSession(room, nextDraft, replacedLocalFileRef.current);
     const sessionId = sourceChanged ? crypto.randomUUID() : room.sessionId;
     nextDraft = { ...nextDraft, sessionId };
 
@@ -350,10 +397,12 @@ export default function WatchPartyPanel() {
     try {
       await saveWatchPartySetup(coupleId, user, nextDraft, { resetPlayback: sourceChanged });
       if (sourceChanged) {
+        setPlayerReady(false);
         lastCommandRef.current = '';
         setManualTime('0:00');
         setSyncState('New session ready');
       }
+      replacedLocalFileRef.current = false;
       setSetupOpen(false);
       showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
@@ -364,7 +413,10 @@ export default function WatchPartyPanel() {
   function selectLocalVideo(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
+    if (localVideoUrl) {
+      if (room.sourceType === 'local') replacedLocalFileRef.current = true;
+      URL.revokeObjectURL(localVideoUrl);
+    }
     setLocalVideoUrl(URL.createObjectURL(file));
     showStatus('Video selected. Your partner should choose the matching file on their device.');
   }
@@ -372,6 +424,10 @@ export default function WatchPartyPanel() {
   async function broadcast(action, currentTime = getPlayerCurrentTime(), delay = 0) {
     if (!configured) {
       showStatus('Set up the watch room first.');
+      return;
+    }
+    if (action === 'play' && !bothReady) {
+      showStatus('Both people must press Ready before playback can start.');
       return;
     }
 
@@ -390,19 +446,30 @@ export default function WatchPartyPanel() {
         sessionId: room.sessionId,
       });
       setSyncState(delay ? 'Countdown shared' : 'Sharing playback');
-    } catch {
-      showStatus('Unable to send the playback update.');
+    } catch (error) {
+      if (action === 'play' && hasSynchronizedPlayer) applyEmbeddedPlayback('pause', currentTime);
+      showStatus(error?.message || 'Unable to send the playback update.');
       setSyncState('Sync interrupted');
     }
   }
 
   function onPlayerPlayback(action, currentTime = getPlayerCurrentTime()) {
     if (Date.now() < suppressEventsUntilRef.current) return;
+    if (action === 'play' && !bothReady) {
+      applyEmbeddedPlayback('pause', currentTime);
+      showStatus('Both partners must press Ready first.');
+      return;
+    }
     broadcast(action, currentTime);
   }
 
   function onYouTubeSeek(currentTime, playing) {
     if (Date.now() < suppressEventsUntilRef.current) return;
+    if (playing && !bothReady) {
+      applyEmbeddedPlayback('pause', currentTime);
+      showStatus('Both partners must press Ready first.');
+      return;
+    }
     setSyncState('Sharing seek');
     broadcast(playing ? 'play' : 'pause', currentTime);
   }
@@ -420,7 +487,20 @@ export default function WatchPartyPanel() {
     const command = room.playback;
     if (!hasSynchronizedPlayer || !command) return;
     if (room.sessionId && command.sessionId !== room.sessionId) return;
-    const applied = applyEmbeddedPlayback(command.action, command.currentTime || 0);
+    if (command.action === 'play' && getCommandDelay(command) > 0) {
+      applyEmbeddedPlayback('pause', command.currentTime || 0);
+      setSyncState('Waiting for shared countdown');
+      return;
+    }
+    if (command.action === 'play' && !bothReady) {
+      applyEmbeddedPlayback('pause', command.currentTime || 0);
+      if (!quiet) showStatus('Wait for both partners to be Ready.');
+      return;
+    }
+    const freshPosition = room.playback?.action === 'play'
+      ? estimatedSharedTime(room.sync) ?? commandPlaybackPosition(command)
+      : commandPlaybackPosition(command);
+    const applied = applyEmbeddedPlayback(command.action, freshPosition);
     if (applied) {
       setSyncState('Matched shared room');
       if (!quiet) showStatus(`Matched the shared room at ${formatTime(command.currentTime)}`);
@@ -543,7 +623,7 @@ export default function WatchPartyPanel() {
           key={`${room.sessionId}:${youtubeVideoId}`}
           ref={youtubeRef}
           videoId={youtubeVideoId}
-          onReady={() => window.setTimeout(() => syncToRoom({ quiet: true }), 150)}
+          onReady={() => { setPlayerReady(true); window.setTimeout(() => syncToRoom({ quiet: true }), 150); }}
           onPlaybackAction={onPlayerPlayback}
           onSeek={onYouTubeSeek}
           onBufferingChange={onPlayerBuffering}
@@ -551,6 +631,7 @@ export default function WatchPartyPanel() {
         />
       ) : hasNativePlayer ? (
         <video
+          key={`${room.sessionId}:${playableUrl}`}
           ref={videoRef}
           src={playableUrl}
           controls
@@ -559,6 +640,9 @@ export default function WatchPartyPanel() {
           onPlay={() => onPlayerPlayback('play')}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
+          onLoadedData={() => { setPlayerReady(true); syncToRoom({ quiet: true }); }}
+          onCanPlay={() => setPlayerReady(true)}
+          onError={() => { setPlayerReady(false); showStatus('This video could not load on your device.'); }}
           onWaiting={() => onPlayerBuffering(true)}
           onPlaying={() => onPlayerBuffering(false)}
           className="max-h-[65vh] w-full rounded-3xl bg-black object-contain shadow-[0_22px_70px_rgba(0,0,0,.35)]"
@@ -594,6 +678,39 @@ export default function WatchPartyPanel() {
       )}
 
       <section className="glass rounded-3xl p-4 sm:p-5">
+        <div className="mb-4 rounded-2xl border border-[#ffc2d6]/25 bg-[#ffc2d6]/[0.04] px-4 py-4">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-semibold text-white">Ready check</p>
+              <p className="mt-1 text-xs leading-5 text-pink-100/65" aria-live="polite">
+                {bothReady ? 'Both ready · you can start together'
+                  : myReady ? 'You are ready · waiting for your partner'
+                    : canReady ? 'Confirm your player is loaded and you are ready to watch'
+                      : 'Choose a source and load it before marking Ready'}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                <span className={myReady ? 'text-emerald-200' : 'text-pink-100/55'}>
+                  {myReady ? '✓' : '○'} You
+                </span>
+                <span className={bothReady ? 'text-emerald-200' : 'text-pink-100/55'}>
+                  {bothReady ? '✓' : '○'} Partner
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleReady}
+              disabled={readyBusy || (!myReady && !canReady)}
+              aria-pressed={myReady}
+              className={'inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ' +
+                (myReady ? 'border border-emerald-300/45 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/20'
+                  : 'bg-gradient-to-r from-blush to-roseGold text-midnight hover:brightness-105')}
+            >
+              {myReady ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+              {readyBusy ? 'Updating…' : myReady ? 'Ready ✓ · Undo' : 'I am ready'}
+            </button>
+          </div>
+        </div>
         {countdown ? (
           <div className="mb-4 rounded-3xl border border-blush/25 bg-blush/[0.06] px-4 py-5 text-center">
             <p className="text-xs uppercase tracking-[0.18em] text-roseGold">Starting together</p>
@@ -605,7 +722,7 @@ export default function WatchPartyPanel() {
           <button
             type="button"
             onClick={() => broadcast('play', undefined, 3000)}
-            disabled={!configured}
+            disabled={!configured || !bothReady}
             className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-4 text-sm font-semibold text-midnight transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Timer size={15} />
@@ -614,7 +731,7 @@ export default function WatchPartyPanel() {
           <button
             type="button"
             onClick={() => broadcast('play')}
-            disabled={!configured}
+            disabled={!configured || !bothReady}
             className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-4 text-sm text-pink-100 transition hover:border-blush/40 disabled:opacity-35"
           >
             <Play size={15} />
@@ -642,7 +759,7 @@ export default function WatchPartyPanel() {
 
         <div className="mt-3 rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.04] px-4 py-3 text-xs leading-5 text-pink-100/60">
           {hasSynchronizedPlayer
-            ? 'Live sync follows the most recent controller, shares seeks immediately, holds playback when the leader buffers, and automatically corrects meaningful drift.'
+            ? 'After both partners are ready, OHS schedules the shared start, uses recent playback samples to compensate for delivery delay, and corrects drift. Browser autoplay limits may still require a tap.'
             : 'This source opens outside OHS, so use Start together and the shared position if either device drifts.'}
         </div>
 
