@@ -103,12 +103,18 @@ export async function sampleCallDiagnostics(peer, previousSample = null) {
     ? Number(pair.availableOutgoingBitrate) / 1000
     : null;
 
-  const totalPackets = packetsReceived + packetsLost;
-  const packetLossPct = totalPackets > 0 ? (packetsLost / totalPackets) * 100 : null;
-  const jitterMs = jitterSeconds == null ? null : jitterSeconds * 1000;
-
   const previous = previousSample?.counters;
   const elapsed = previous ? now - previous.timestamp : 0;
+  // getStats packet counters are cumulative over the call. Judge the most
+  // recent interval; otherwise an early burst permanently poisons quality.
+  const receivedDelta = previous ? packetsReceived - previous.packetsReceived : null;
+  const lostDelta = previous ? packetsLost - previous.packetsLost : null;
+  const intervalPackets = receivedDelta !== null && lostDelta !== null
+    ? receivedDelta + lostDelta : 0;
+  const packetLossPct = elapsed > 0 && receivedDelta >= 0 && lostDelta >= 0 && intervalPackets > 0
+    ? (lostDelta / intervalPackets) * 100
+    : null;
+  const jitterMs = jitterSeconds == null ? null : jitterSeconds * 1000;
 
   const inboundKbps = previous
     ? kbps(inboundBytes - previous.inboundBytes, elapsed)
@@ -142,6 +148,8 @@ export async function sampleCallDiagnostics(peer, previousSample = null) {
       timestamp: now,
       inboundBytes,
       outboundBytes,
+      packetsReceived,
+      packetsLost,
     },
   };
 }
