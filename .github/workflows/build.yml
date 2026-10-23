@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit runtime dependencies for critical advisories
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: React and runtime correctness lint
         run: npm run lint
 
