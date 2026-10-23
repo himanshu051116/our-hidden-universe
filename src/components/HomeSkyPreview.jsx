@@ -18,6 +18,8 @@ function signalEmoji(signal) {
   return '✨';
 }
 
+const EMPTY_PREVIEW_STARS = [];
+
 export default function HomeSkyPreview({ onSunSecret }) {
   const { user, coupleId } = useAuth();
   const [sky, setSky] = useState({ stars: [], signals: [] });
@@ -40,7 +42,7 @@ export default function HomeSkyPreview({ onSunSecret }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const stars = sky.stars || [];
+  const stars = sky.stars || EMPTY_PREVIEW_STARS;
   const previewStars = useMemo(() => stars.slice(0, 7), [stars]);
   const freshPartnerSignal = (sky.signals || []).find((signal) => {
     if (signal.senderId && signal.senderId === user?.uid) return false;
