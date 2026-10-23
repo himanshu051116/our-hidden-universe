@@ -224,7 +224,22 @@ test.describe('OHS 1:1 call smoke', () => {
       await expect(callerPanel.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
       await callerPanel.getByRole('button', { name: 'Turn camera off' }).click();
       await expect(callerPanel.getByRole('button', { name: 'Turn camera on' })).toBeVisible();
+      // Switching while muted must not re-enable the camera.
+      await callerPanel.getByRole('button', { name: 'Switch camera' }).click();
+      await expect(callerPanel.getByRole('button', { name: 'Turn camera on' })).toBeVisible();
       await callerPanel.getByRole('button', { name: 'Turn camera on' }).click();
+
+      // Browser support varies, so either an effective saver or a clear
+      // browser-unsupported error is acceptable, never silent success.
+      await callerPanel.getByRole('button', { name: 'Save video data' }).click();
+      const enabled = callerPanel.getByRole('button', { name: /Data saver on/ });
+      await expect.poll(async () => (
+        await enabled.count() > 0 || await callerPanel.getByRole('alert').count() > 0
+      )).toBe(true);
+      if (await enabled.count()) {
+        await enabled.click();
+        await expect(callerPanel.getByRole('button', { name: 'Save video data' })).toBeVisible();
+      }
 
       // The global call provider remains alive across route transitions.
       await callerPanel.getByRole('button', { name: 'Full-screen call' }).click();

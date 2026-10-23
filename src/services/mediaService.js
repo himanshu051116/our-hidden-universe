@@ -90,23 +90,28 @@ export async function switchCamera(stream, peerConnection, currentFacingMode = '
   }
 
   const sender = peerConnection
-    ?.getSenders()
+    ?.getSenders?.()
     ?.find((candidate) => candidate.track?.kind === 'video');
 
-  if (sender) {
-    try {
-      await sender.replaceTrack(replacementTrack);
-    } catch (error) {
-      stopMediaStream(replacementStream);
-      throw error;
-    }
+  // Swapping an existing, disabled camera must never re-enable it.
+  replacementTrack.enabled = currentVideoTrack?.enabled ?? true;
+
+  if (!sender?.replaceTrack) {
+    stopMediaStream(replacementStream);
+    throw new Error('Camera switching is not supported for this call.');
   }
 
-  if (currentVideoTrack) {
-    stream.removeTrack(currentVideoTrack);
-    currentVideoTrack.stop();
+  try {
+    await sender.replaceTrack(replacementTrack);
+  } catch (error) {
+    stopMediaStream(replacementStream);
+    throw error;
   }
-  stream.addTrack(replacementTrack);
 
-  return { stream, facingMode: nextFacingMode };
+  // Replacing the stream instance makes local video elements update reliably;
+  // the original audio tracks continue to be shared with the peer connection.
+  const nextStream = new MediaStream([...stream.getAudioTracks(), replacementTrack]);
+  currentVideoTrack?.stop();
+
+  return { stream: nextStream, facingMode: nextFacingMode };
 }

@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Signal,
   Clapperboard,
+  Gauge,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -38,12 +39,15 @@ export default function CallScreen() {
     toggleMute,
     toggleCamera,
     flipCamera,
+    toggleDataSaver,
   } = useCall();
 
   const localRef = useRef(null);
   const remoteRef = useRef(null);
   const [now, setNow] = useState(Date.now());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const [qualityBusy, setQualityBusy] = useState(false);
+  const [controlError, setControlError] = useState('');
 
   useEffect(() => attachStream(localRef.current, localStream), [localStream, inWatchRoom, call.status]);
   useEffect(() => {
@@ -52,6 +56,28 @@ export default function CallScreen() {
     attachStream(element, remoteStream);
     element.play?.().then(() => setPlaybackBlocked(false)).catch(() => setPlaybackBlocked(true));
   }, [remoteStream, call.type, call.status, inWatchRoom]);
+
+  async function changeDataSaver() {
+    if (qualityBusy) return;
+    setQualityBusy(true);
+    setControlError('');
+    try {
+      await toggleDataSaver();
+    } catch (error) {
+      setControlError(error?.message || 'Could not change video quality on this device.');
+    } finally {
+      setQualityBusy(false);
+    }
+  }
+
+  async function changeCamera() {
+    setControlError('');
+    try {
+      await flipCamera();
+    } catch (error) {
+      setControlError(error?.message || 'Could not switch camera.');
+    }
+  }
 
   async function unlockPlayback() {
     try {
@@ -99,6 +125,8 @@ export default function CallScreen() {
   }
 
   const isAudioOnly = call.type === 'audio';
+  const hasMicrophone = Boolean(localStream?.getAudioTracks?.().some((track) => track.readyState === 'live'));
+  const hasCamera = Boolean(localStream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
   const partnerName = partner?.displayName || partner?.email || 'Your partner';
   const initial = String(partnerName).trim().charAt(0).toUpperCase() || 'P';
 
@@ -190,7 +218,8 @@ export default function CallScreen() {
             <button
               type="button"
               onClick={toggleMute}
-              className={`grid h-12 w-12 place-items-center rounded-full border transition active:scale-95 ${call.muted ? 'border-white/10 bg-white text-midnight' : 'border-white/15 bg-white/10 text-white'}`}
+              disabled={!hasMicrophone}
+              className={`grid h-12 w-12 place-items-center rounded-full border transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${call.muted ? 'border-white/10 bg-white text-midnight' : 'border-white/15 bg-white/10 text-white'}`}
               aria-label={call.muted ? 'Unmute microphone' : 'Mute microphone'}
             >
               {call.muted ? <MicOff size={19} /> : <Mic size={19} />}
@@ -201,7 +230,8 @@ export default function CallScreen() {
                 <button
                   type="button"
                   onClick={toggleCamera}
-                  className={`grid h-12 w-12 place-items-center rounded-full border transition active:scale-95 ${!call.cameraEnabled ? 'border-white/10 bg-white text-midnight' : 'border-white/15 bg-white/10 text-white'}`}
+                  disabled={!hasCamera}
+                  className={`grid h-12 w-12 place-items-center rounded-full border transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${!call.cameraEnabled ? 'border-white/10 bg-white text-midnight' : 'border-white/15 bg-white/10 text-white'}`}
                   aria-label={call.cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
                 >
                   {call.cameraEnabled ? <Camera size={19} /> : <CameraOff size={19} />}
@@ -209,13 +239,27 @@ export default function CallScreen() {
 
                 <button
                   type="button"
-                  onClick={flipCamera}
-                  className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/10 text-white transition active:scale-95"
+                  onClick={changeCamera}
+                  disabled={!hasCamera}
+                  className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/10 text-white transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="Switch camera"
                 >
                   <RefreshCw size={18} />
                 </button>
               </>
+            ) : null}
+
+            {!isAudioOnly && call.status === CALL_STATUS.CONNECTED ? (
+              <button
+                type="button"
+                onClick={changeDataSaver}
+                disabled={qualityBusy}
+                aria-pressed={Boolean(call.dataSaverEnabled)}
+                className={`grid h-12 w-12 place-items-center rounded-full border transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:opacity-40 ${call.dataSaverEnabled ? 'border-emerald-300/45 bg-emerald-300/20 text-emerald-100' : 'border-white/15 bg-white/10 text-white'}`}
+                aria-label={call.dataSaverEnabled ? 'Turn data saver off' : 'Turn data saver on'}
+              >
+                <Gauge size={19} />
+              </button>
             ) : null}
 
             <button
@@ -228,6 +272,12 @@ export default function CallScreen() {
             </button>
           </div>
           </div>
+          {controlError ? (
+            <p role="alert" className="mt-2 rounded-xl border border-amber-200/20 bg-black/85 px-3 py-2 text-center text-xs text-amber-100">{controlError}</p>
+          ) : null}
+          {call.dataSaverEnabled && !isAudioOnly ? (
+            <p className="mt-2 text-center text-[11px] text-emerald-100/85">Data saver on · voice stays at normal quality</p>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import {
   Camera, CameraOff, Headphones, Maximize2, Mic, MicOff, Phone,
-  PhoneOff, RefreshCw, Signal, Video,
+  PhoneOff, RefreshCw, Signal, Video, Gauge,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -52,12 +52,14 @@ export default function WatchCallPanel() {
   const navigate = useNavigate();
   const {
     call, partner, roomMemberCount, localStream, remoteStream, startCall,
-    endCall, toggleMute, toggleCamera, flipCamera,
+    endCall, toggleMute, toggleCamera, flipCamera, toggleDataSaver,
   } = useCall();
 
   const remoteRef = useRef(null);
   const localRef = useRef(null);
   const [error, setError] = useState('');
+  const [qualityBusy, setQualityBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [dockSide, setDockSide] = useState('right');
@@ -72,9 +74,18 @@ export default function WatchCallPanel() {
   }, []);
 
   const connected = call.status === CALL_STATUS.CONNECTED;
+  useEffect(() => {
+    if (!connected) return undefined;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [connected]);
+  const durationSeconds = call.connectedAt ? Math.max(0, Math.floor((now - call.connectedAt) / 1000)) : 0;
+  const durationLabel = `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, '0')}`;
   const active = activeStatuses.has(call.status);
   const canStart = call.status === CALL_STATUS.IDLE || call.status === CALL_STATUS.ENDED;
   const audioOnly = call.type === 'audio';
+  const hasMicrophone = Boolean(localStream?.getAudioTracks?.().some((track) => track.readyState === 'live'));
+  const hasCamera = Boolean(localStream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
 
   useEffect(() => {
     const element = remoteRef.current;
@@ -101,6 +112,28 @@ export default function WatchCallPanel() {
       await startCall(type);
     } catch (callError) {
       setError(callError?.message || 'Could not start the call. Check device permissions and try again.');
+    }
+  }
+
+  async function changeDataSaver() {
+    if (qualityBusy) return;
+    setQualityBusy(true);
+    setError('');
+    try {
+      await toggleDataSaver();
+    } catch (problem) {
+      setError(problem?.message || 'This device cannot change outgoing video quality.');
+    } finally {
+      setQualityBusy(false);
+    }
+  }
+
+  async function switchLocalCamera() {
+    setError('');
+    try {
+      await flipCamera();
+    } catch (problem) {
+      setError(problem?.message || 'Could not switch camera. You can keep using your current camera.');
     }
   }
 
@@ -135,6 +168,7 @@ export default function WatchCallPanel() {
             <Video size={13} aria-hidden="true" /> Private video call
           </p>
           <div className="mt-1"><StatusIndicator call={call} /></div>
+          {connected ? <p className="mt-1 font-mono text-[11px] text-pink-100/60" aria-label="Call duration">{durationLabel}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {active ? (
@@ -220,7 +254,7 @@ export default function WatchCallPanel() {
               <button
                 type="button"
                 onClick={toggleMute}
-                disabled={!localStream}
+                disabled={!hasMicrophone}
                 className={buttonBase + (call.muted ? ' border-white/25 bg-white text-midnight' : ' border-white/15 bg-white/10 text-white')}
                 aria-label={call.muted ? 'Unmute microphone' : 'Mute microphone'}
               >
@@ -231,7 +265,7 @@ export default function WatchCallPanel() {
                   <button
                     type="button"
                     onClick={toggleCamera}
-                    disabled={!localStream}
+                    disabled={!hasCamera}
                     className={buttonBase + (!call.cameraEnabled ? ' border-white/25 bg-white text-midnight' : ' border-white/15 bg-white/10 text-white')}
                     aria-label={call.cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
                   >
@@ -239,8 +273,8 @@ export default function WatchCallPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={flipCamera}
-                    disabled={!localStream}
+                    onClick={switchLocalCamera}
+                    disabled={!hasCamera}
                     className={buttonBase + ' border-white/15 bg-white/10 text-white'}
                     aria-label="Switch camera"
                   >
@@ -257,6 +291,19 @@ export default function WatchCallPanel() {
                 <PhoneOff size={20} />
               </button>
             </div>
+            {connected && !audioOnly ? (
+              <button
+                type="button"
+                onClick={changeDataSaver}
+                disabled={qualityBusy}
+                aria-pressed={Boolean(call.dataSaverEnabled)}
+                className={'mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-45 ' +
+                  (call.dataSaverEnabled ? 'border-emerald-300/35 bg-emerald-300/10 text-emerald-100' : 'border-white/15 bg-white/[0.04] text-pink-100/75 hover:border-blush/40 hover:text-white')}
+              >
+                <Gauge size={14} aria-hidden="true" />
+                {qualityBusy ? 'Adjusting video…' : call.dataSaverEnabled ? 'Data saver on · turn off' : 'Save video data'}
+              </button>
+            ) : null}
             {expanded && connected ? (
               <button
                 type="button"

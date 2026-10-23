@@ -21,6 +21,7 @@ import {
 } from '../services/callSignalingService.js';
 import { recordCallHistory } from '../services/callHistoryService.js';
 import { sampleCallDiagnostics } from '../services/callDiagnosticsService.js';
+import { setCallVideoDataSaver } from '../services/callBandwidthService.js';
 import {
   enableCallNotifications as enableCallNotificationsService,
   refreshCallNotificationRegistration,
@@ -104,6 +105,7 @@ export function CallProvider({ children }) {
   const connectTimerRef = useRef(null);
   const startLockRef = useRef(false);
   const answerLockRef = useRef(false);
+  const operationRef = useRef(0);
   const ringTimerRef = useRef(null);
   const incomingExpiryTimerRef = useRef(null);
   const finishLockRef = useRef(false);
@@ -308,6 +310,8 @@ export function CallProvider({ children }) {
   async function finishLocal(message = '', preserveEnded = true) {
     if (finishLockRef.current) return;
     finishLockRef.current = true;
+    // Invalidate any outstanding camera-permission, ICE or signaling setup.
+    operationRef.current += 1;
 
     clearTimeout(reconnectTimerRef.current);
     clearTimeout(recoveryDeadlineRef.current);
@@ -758,6 +762,7 @@ export function CallProvider({ children }) {
     }
 
     startLockRef.current = true;
+    const operation = ++operationRef.current;
     stateRef.current = { ...initialCallState, status: CALL_STATUS.REQUESTING_MEDIA, type, callerId: user.uid, calleeId: partner.id };
     setState(stateRef.current);
 
@@ -767,9 +772,11 @@ export function CallProvider({ children }) {
       // Establish ownership of the media tracks before awaiting credentials.
       // Promise.all can reject after getUserMedia succeeds, leaking a live camera.
       const stream = await acquireLocalMedia(type);
+      if (operation !== operationRef.current) { stopMediaStream(stream); return; }
       localStreamRef.current = stream;
       setLocalStream(stream);
       const iceConfig = await resolveIceServers(coupleId);
+      if (operation !== operationRef.current) return;
 
       setState((previous) => ({
         ...previous,
@@ -785,6 +792,11 @@ export function CallProvider({ children }) {
         type,
       });
       createdCallId = callId;
+      if (operation !== operationRef.current) {
+        updateCallStatus(coupleId, callId, 'ended', { endedAt: serverTimestamp(), endedBy: user.uid, endReason: 'cancelled-during-setup' }).catch(() => {});
+        cleanupCallSignaling(coupleId, callId).catch(() => {});
+        return;
+      }
 
       const baseCall = {
         id: callId,
@@ -803,7 +815,18 @@ export function CallProvider({ children }) {
       observeCall(callId, 'caller');
 
       const offer = await createAndSetOffer(peer);
+      if (operation !== operationRef.current) return;
       await writeOffer(coupleId, callId, offer);
+      if (operation !== operationRef.current) {
+        // The initial offer may finish uploading after the user hung up.
+        // Restore the terminal status so a late network response cannot ring.
+        updateCallStatus(coupleId, callId, 'ended', {
+          endedAt: serverTimestamp(), endedBy: user.uid,
+          endReason: 'cancelled-during-setup',
+        }).catch(() => {});
+        cleanupCallSignaling(coupleId, callId).catch(() => {});
+        return;
+      }
 
       sendIncomingCallPush(coupleId, callId).catch(() => {});
 
@@ -821,6 +844,7 @@ export function CallProvider({ children }) {
         RING_TIMEOUT_MS,
       );
     } catch (error) {
+      if (operation !== operationRef.current) return;
       if (createdCallId) {
         updateCallStatus(coupleId, createdCallId, 'failed', {
           endedAt: serverTimestamp(),
@@ -861,6 +885,7 @@ export function CallProvider({ children }) {
     }
 
     answerLockRef.current = true;
+    const operation = ++operationRef.current;
     setState((previous) => ({
       ...previous,
       status: CALL_STATUS.REQUESTING_MEDIA,
@@ -869,10 +894,12 @@ export function CallProvider({ children }) {
 
     try {
       const stream = await acquireLocalMedia(call.type || 'video');
+      if (operation !== operationRef.current) { stopMediaStream(stream); return; }
       localStreamRef.current = stream;
       setLocalStream(stream);
       activeCallRef.current = call;
       const iceConfig = await resolveIceServers(coupleId);
+      if (operation !== operationRef.current) return;
 
       setState((previous) => ({
         ...previous,
@@ -890,10 +917,14 @@ export function CallProvider({ children }) {
         throw new Error('This incoming call has expired. Ask your partner to call again.');
       }
       await applyRemoteDescription(peer, call.offer);
+      if (operation !== operationRef.current) return;
       await flushRemoteCandidates(0);
+      if (operation !== operationRef.current) return;
 
       const answer = await createAndSetAnswer(peer);
+      if (operation !== operationRef.current) return;
       await writeAnswer(coupleId, call.id, answer);
+      if (operation !== operationRef.current) return;
       scheduleConnectDeadline(call.id);
 
       setState((previous) => ({
@@ -905,6 +936,7 @@ export function CallProvider({ children }) {
       clearTimeout(incomingExpiryTimerRef.current);
       dismissIncomingCallAlert(call.id).catch(() => {});
     } catch (error) {
+      if (operation !== operationRef.current) return;
       // A media/SDP failure must not leave the camera and microphone running.
       remoteIceUnsubRef.current?.();
       callUnsubRef.current?.();
@@ -949,6 +981,12 @@ export function CallProvider({ children }) {
 
   async function endCall(reason = 'user-ended') {
     const call = activeCallRef.current;
+    const wasConnected = Boolean(stateRef.current.connectedAt || call?.connectedAt);
+    const historyCall = call ? { ...call, connectedAt: call.connectedAt || stateRef.current.connectedAt } : null;
+
+    // Release microphone/camera and cancel pending device prompts immediately.
+    // Network writes should not keep the microphone open on a weak connection.
+    await finishLocal('', stateRef.current.status !== CALL_STATUS.FAILED);
 
     if (call?.id) {
       await updateCallStatus(coupleId, call.id, 'ended', {
@@ -956,20 +994,14 @@ export function CallProvider({ children }) {
         endedBy: user?.uid || null,
         endReason: reason,
       }).catch(() => {});
-
-      await recordHistory(
-        call,
-        stateRef.current.connectedAt || call.connectedAt ? 'completed' : 'cancelled',
-      );
-
+      await recordHistory(historyCall, wasConnected ? 'completed' : 'cancelled');
       cleanupCallSignaling(coupleId, call.id).catch(() => {});
     }
-
-    await finishLocal('', stateRef.current.status !== CALL_STATUS.FAILED);
   }
 
   function toggleMute() {
     const stream = localStreamRef.current;
+    if (!stream?.getAudioTracks?.().some((track) => track.readyState === 'live')) return;
     setState((previous) => {
       const muted = !previous.muted;
       setTrackEnabled(stream, 'audio', !muted);
@@ -979,6 +1011,7 @@ export function CallProvider({ children }) {
 
   function toggleCamera() {
     const stream = localStreamRef.current;
+    if (!stream?.getVideoTracks?.().some((track) => track.readyState === 'live')) return;
     setState((previous) => {
       const cameraEnabled = !previous.cameraEnabled;
       setTrackEnabled(stream, 'video', cameraEnabled);
@@ -987,7 +1020,9 @@ export function CallProvider({ children }) {
   }
 
   async function flipCamera() {
-    if (!localStreamRef.current || !peerRef.current) return;
+    if (!localStreamRef.current || !peerRef.current) {
+      throw new Error('Wait for your camera to connect before switching it.');
+    }
 
     const result = await switchCamera(
       localStreamRef.current,
@@ -1004,6 +1039,15 @@ export function CallProvider({ children }) {
   }
 
 
+  async function toggleDataSaver() {
+    const next = !stateRef.current.dataSaverEnabled;
+    if (stateRef.current.type !== 'video' || !peerRef.current) {
+      throw new Error('Video quality controls are only available during a video call.');
+    }
+    await setCallVideoDataSaver(peerRef.current, next);
+    setState((current) => ({ ...current, dataSaverEnabled: next }));
+  }
+
   async function enableCallNotifications() {
     const result = await enableCallNotificationsService(coupleId, user);
     setNotificationStatus(result);
@@ -1016,27 +1060,28 @@ export function CallProvider({ children }) {
     return result;
   }
 
-  const value = useMemo(
-    () => ({
-      call: state,
-      incomingCall,
-      partner,
-      roomMemberCount: members.length,
-      localStream,
-      remoteStream,
-      startCall,
-      answerCall,
-      declineCall,
-      endCall,
-      toggleMute,
-      toggleCamera,
-      flipCamera,
-      notificationStatus,
-      enableCallNotifications,
-      refreshCallNotificationStatus,
-    }),
-    [state, incomingCall, partner, members.length, localStream, remoteStream, notificationStatus],
-  );
+  // The action functions close over the current signed-in member and room.
+  // Memoizing without those functions as dependencies could expose stale
+  // signaling callbacks after an account/room transition.
+  const value = {
+    call: state,
+    incomingCall,
+    partner,
+    roomMemberCount: members.length,
+    localStream,
+    remoteStream,
+    startCall,
+    answerCall,
+    declineCall,
+    endCall,
+    toggleMute,
+    toggleCamera,
+    flipCamera,
+    toggleDataSaver,
+    notificationStatus,
+    enableCallNotifications,
+    refreshCallNotificationStatus,
+  };
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
 }
