@@ -24,7 +24,7 @@ import {
   setWatchPartyReady,
   subscribeWatchParty,
 } from '../services/watchPartyService.js';
-import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection } from '../services/watchSyncMath.js';
+import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession } from '../services/watchSyncMath.js';
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -88,6 +88,7 @@ export default function WatchPartyPanel() {
   const playbackRateTimerRef = useRef(0);
   const previousSessionRef = useRef('');
   const localFileSessionRef = useRef('');
+  const replacedLocalFileRef = useRef(false);
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const youtubeVideoId = room.sourceType === 'youtube' ? extractYouTubeVideoId(room.sourceUrl) : '';
@@ -387,11 +388,7 @@ export default function WatchPartyPanel() {
       return;
     }
 
-    const sourceChanged =
-      !room.sessionId ||
-      room.sourceType !== nextDraft.sourceType ||
-      room.sourceUrl !== nextDraft.sourceUrl ||
-      nextDraft.sourceType === 'local';
+    const sourceChanged = shouldResetWatchSession(room, nextDraft, replacedLocalFileRef.current);
     const sessionId = sourceChanged ? crypto.randomUUID() : room.sessionId;
     nextDraft = { ...nextDraft, sessionId };
 
@@ -405,6 +402,7 @@ export default function WatchPartyPanel() {
         setManualTime('0:00');
         setSyncState('New session ready');
       }
+      replacedLocalFileRef.current = false;
       setSetupOpen(false);
       showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
@@ -415,7 +413,10 @@ export default function WatchPartyPanel() {
   function selectLocalVideo(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
+    if (localVideoUrl) {
+      if (room.sourceType === 'local') replacedLocalFileRef.current = true;
+      URL.revokeObjectURL(localVideoUrl);
+    }
     setLocalVideoUrl(URL.createObjectURL(file));
     showStatus('Video selected. Your partner should choose the matching file on their device.');
   }
@@ -486,6 +487,11 @@ export default function WatchPartyPanel() {
     const command = room.playback;
     if (!hasSynchronizedPlayer || !command) return;
     if (room.sessionId && command.sessionId !== room.sessionId) return;
+    if (command.action === 'play' && getCommandDelay(command) > 0) {
+      applyEmbeddedPlayback('pause', command.currentTime || 0);
+      setSyncState('Waiting for shared countdown');
+      return;
+    }
     if (command.action === 'play' && !bothReady) {
       applyEmbeddedPlayback('pause', command.currentTime || 0);
       if (!quiet) showStatus('Wait for both partners to be Ready.');
@@ -634,7 +640,7 @@ export default function WatchPartyPanel() {
           onPlay={() => onPlayerPlayback('play')}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
-          onLoadedData={() => setPlayerReady(true)}
+          onLoadedData={() => { setPlayerReady(true); syncToRoom({ quiet: true }); }}
           onCanPlay={() => setPlayerReady(true)}
           onError={() => { setPlayerReady(false); showStatus('This video could not load on your device.'); }}
           onWaiting={() => onPlayerBuffering(true)}
