@@ -1,7 +1,7 @@
 import { AnimatePresence } from 'framer-motion';
 import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import ProtectedRoute from './components/ProtectedRoute.jsx';
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute.jsx'));
 import StarField from './components/StarField.jsx';
 import useNativeApp from './hooks/useNativeApp.js';
 
