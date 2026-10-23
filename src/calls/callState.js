@@ -25,6 +25,7 @@ export const initialCallState = {
   endedAt: null,
   muted: false,
   cameraEnabled: true,
+  dataSaverEnabled: false,
   facingMode: 'user',
   relayAvailable: false,
   connectionRoute: 'unknown',
