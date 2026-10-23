@@ -35,7 +35,8 @@ jobs:
       - name: Extract non-breaking dependency patch for review
         run: |
           cp package-lock.json /tmp/ohs-lock-before.json
-          npm audit fix --package-lock-only --ignore-scripts --no-fund || true
+          npm pkg set 'overrides.gaxios.uuid=11.1.1'
+          npm install --package-lock-only --ignore-scripts --no-fund || true
           node scripts/audit-lock-diff-temporary.mjs
           npm audit --omit=dev --audit-level=moderate || true
 
