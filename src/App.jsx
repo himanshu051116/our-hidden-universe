@@ -38,7 +38,14 @@ export default function App() {
   useEffect(() => {
     if (!location.hash) return;
     const timer = window.setTimeout(() => {
-      document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // URL fragments are not guaranteed to be valid CSS selectors.
+      // Decode the ID safely rather than calling querySelector on untrusted hash text.
+      try {
+        const id = decodeURIComponent(location.hash.slice(1));
+        if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {
+        // Ignore invalid percent-encoded fragments without crashing navigation.
+      }
     }, 120);
     return () => window.clearTimeout(timer);
   }, [location.pathname, location.hash]);
