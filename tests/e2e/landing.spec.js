@@ -172,3 +172,12 @@ test('guest entry avoids the calling runtime and excess ambient effects', async 
   await page.goto('/login?mode=login');
   await expect(page.getByLabel('Couple code', { exact: true })).toBeVisible();
 });
+
+test('malformed link fragments do not crash the landing route', async ({ page }) => {
+  const crashes = [];
+  page.on('pageerror', (error) => crashes.push(error.message));
+  await page.goto('/#%');
+  await expect(page.getByRole('heading', { name: /Feel closer, even from miles away/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
+  expect(crashes).toEqual([]);
+});
