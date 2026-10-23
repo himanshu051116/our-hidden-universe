@@ -74,7 +74,7 @@ export default function Landing() {
   const primaryText = hasUniverse ? 'Open your universe' : 'Create our space';
 
   return (
-    <PageShell>
+    <PageShell immediate>
       <a
         href="#main-content"
         className="sr-only fixed left-4 top-4 z-50 rounded-full bg-[#ffc2d6] px-4 py-2 text-[#210f25] focus:not-sr-only"
