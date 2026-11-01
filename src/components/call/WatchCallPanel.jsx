@@ -160,7 +160,7 @@ export default function WatchCallPanel() {
     <aside
       aria-label="Watch Together video call"
       data-watch-call-status={call.status}
-      className="min-w-0 w-full self-start overflow-hidden rounded-[24px] border border-white/15 bg-[#151020]/95 shadow-[0_15px_45px_rgba(0,0,0,.22)] lg:rounded-[26px] lg:shadow-[0_24px_70px_rgba(0,0,0,.3)]"
+      className="min-w-0 w-full self-start overflow-hidden rounded-[24px] border border-white/15 bg-[#151020]/95 shadow-[0_15px_45px_rgba(0,0,0,.22)] lg:sticky lg:top-24 lg:rounded-[26px] lg:shadow-[0_24px_70px_rgba(0,0,0,.3)]"
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 p-3.5 sm:px-4">
         <div className="min-w-0">
