@@ -677,6 +677,9 @@ export default function WatchPartyPanel() {
         </section>
       )}
 
+      {/* Mobile call video lives below the player, never over its controls. */}
+      <div id="watch-inline-call-slot" className="min-w-0 scroll-mt-24 lg:hidden" />
+
       <section className="glass rounded-3xl p-4 sm:p-5">
         <div className="mb-4 rounded-2xl border border-[#ffc2d6]/25 bg-[#ffc2d6]/[0.04] px-4 py-4">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
