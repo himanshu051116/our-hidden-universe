@@ -62,7 +62,7 @@ export default function WatchCallPanel() {
   const [now, setNow] = useState(Date.now());
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [dockSide, setDockSide] = useState('right');
+  const [mobileTarget, setMobileTarget] = useState(null);
   const [mobileDock, setMobileDock] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
 
   useEffect(() => {
@@ -72,6 +72,12 @@ export default function WatchCallPanel() {
     query.addEventListener('change', update);
     return () => query.removeEventListener('change', update);
   }, []);
+
+  // On phones, render the same call instance in the reserved slot just below the
+  // movie. Never float video calling over YouTube or native playback controls.
+  useEffect(() => {
+    setMobileTarget(mobileDock ? document.getElementById('watch-inline-call-slot') : null);
+  }, [mobileDock]);
 
   const connected = call.status === CALL_STATUS.CONNECTED;
   useEffect(() => {
@@ -96,11 +102,11 @@ export default function WatchCallPanel() {
         .then(() => setPlaybackBlocked(false))
         .catch(() => setPlaybackBlocked(true));
     }
-  }, [remoteStream, call.status, audioOnly, expanded, mobileDock]);
+  }, [remoteStream, call.status, audioOnly, expanded, mobileDock, mobileTarget]);
 
   useEffect(() => {
     bindStream(localRef.current, localStream);
-  }, [localStream, call.status, audioOnly, expanded, mobileDock]);
+  }, [localStream, call.status, audioOnly, expanded, mobileDock, mobileTarget]);
 
   useEffect(() => {
     if (!active && call.status !== CALL_STATUS.FAILED) setPlaybackBlocked(false);
@@ -154,13 +160,7 @@ export default function WatchCallPanel() {
     <aside
       aria-label="Watch Together video call"
       data-watch-call-status={call.status}
-      className={
-        'min-w-0 self-start overflow-hidden rounded-[26px] border border-white/15 bg-[#151020]/95 shadow-[0_24px_70px_rgba(0,0,0,.3)] lg:sticky lg:top-24 lg:w-auto lg:max-h-none ' +
-        (active
-          ? 'fixed bottom-[calc(5.7rem+env(safe-area-inset-bottom))] z-40 max-h-[min(65vh,490px)] w-[min(72vw,270px)] overflow-y-auto overscroll-contain lg:overflow-visible ' +
-            (dockSide === 'right' ? 'right-3 lg:right-auto' : 'left-3 lg:left-auto')
-          : 'w-full')
-      }
+      className="min-w-0 w-full self-start overflow-hidden rounded-[24px] border border-white/15 bg-[#151020]/95 shadow-[0_15px_45px_rgba(0,0,0,.22)] lg:sticky lg:top-24 lg:rounded-[26px] lg:shadow-[0_24px_70px_rgba(0,0,0,.3)]"
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 p-3.5 sm:px-4">
         <div className="min-w-0">
@@ -171,16 +171,6 @@ export default function WatchCallPanel() {
           {connected ? <p className="mt-1 font-mono text-[11px] text-pink-100/60" aria-label="Call duration">{durationLabel}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {active ? (
-            <button
-              type="button"
-              onClick={() => setDockSide((current) => current === 'right' ? 'left' : 'right')}
-              className="rounded-full border border-white/15 px-2.5 py-2 text-[11px] font-semibold text-pink-100/75 transition hover:border-blush/50 hover:text-white lg:hidden"
-              aria-label="Move floating call to other side"
-            >
-              Move
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
@@ -372,7 +362,7 @@ export default function WatchCallPanel() {
       ) : null}
     </aside>
   );
-  return active && mobileDock && typeof document !== 'undefined'
-    ? createPortal(panel, document.body)
-    : panel;
+  // Keep one mounted call panel across layouts, so audio is never played twice.
+  // The desktop version stays in its sidebar; mobile uses normal document flow.
+  return mobileDock && mobileTarget ? createPortal(panel, mobileTarget) : panel;
 }

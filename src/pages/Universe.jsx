@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Heart, Sparkles } from 'lucide-react';
+import { Check, Copy, Heart, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import BottomNav from '../components/navigation/BottomNav.jsx';
@@ -9,11 +9,38 @@ import useEasterEggs from '../hooks/useEasterEggs.js';
 import { resetCoupleData } from '../services/resetService.js';
 
 export default function Universe() {
-  const { coupleId } = useAuth();
+  const { coupleId, coupleCodeDisplay } = useAuth();
   const { easterEggMessage } = useEasterEggs();
   const [resetBusy, setResetBusy] = useState(false);
   const [resetVersion, setResetVersion] = useState(0);
   const [resetStatus, setResetStatus] = useState('');
+  const [codeCopyStatus, setCodeCopyStatus] = useState('');
+
+  async function copyCoupleCode() {
+    if (!coupleCodeDisplay) return;
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(coupleCodeDisplay);
+        copied = true;
+      } else {
+        // Clipboard API is not always available in older installed PWAs.
+        const field = document.createElement('textarea');
+        field.value = coupleCodeDisplay;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        copied = document.execCommand('copy');
+        field.remove();
+      }
+    } catch {
+      copied = false;
+    }
+    setCodeCopyStatus(copied ? 'Copied!' : 'Copy unavailable');
+    window.setTimeout(() => setCodeCopyStatus(''), 2000);
+  }
 
   async function onResetData() {
     const confirmed = window.confirm(
@@ -45,10 +72,24 @@ export default function Universe() {
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blush/10 text-blush ring-1 ring-blush/15">
             <Heart size={17} fill="currentColor" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate font-display text-base leading-none text-white">Our Hidden Universe</p>
             <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-pink-100/42">Private space for two</p>
           </div>
+          <button
+            type="button"
+            onClick={copyCoupleCode}
+            disabled={!coupleCodeDisplay}
+            title={coupleCodeDisplay ? 'Copy couple code' : 'Couple code unavailable'}
+            aria-label={codeCopyStatus || (coupleCodeDisplay ? `Copy couple code ${coupleCodeDisplay}` : 'Couple code unavailable')}
+            className="flex min-h-11 min-w-0 max-w-[43%] shrink-0 items-center gap-1.5 rounded-xl border border-blush/25 bg-blush/[0.08] px-2.5 text-blush transition hover:bg-blush/[0.15] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blush disabled:opacity-40"
+          >
+            <span className="min-w-0 text-left">
+              <span className="block text-[9px] uppercase tracking-[0.12em] text-pink-100/55">Couple code</span>
+              <span className="block truncate font-mono text-[11px] font-semibold tracking-wider">{codeCopyStatus || coupleCodeDisplay || '—'}</span>
+            </span>
+            {codeCopyStatus === 'Copied!' ? <Check size={15} className="shrink-0" aria-hidden="true" /> : <Copy size={14} className="shrink-0" aria-hidden="true" />}
+          </button>
         </header>
 
         {resetStatus ? (
