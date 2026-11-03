@@ -51,44 +51,6 @@ jobs:
         run: npm audit --omit=dev --audit-level=moderate
 
 
-  lockfile-remediation:
-    name: Repair dependency lockfile (one-time)
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/couple-code-watch-ui-20261104'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Re-resolve locked dependencies with narrow security overrides
-        run: npm install --package-lock-only --no-fund
-      - name: Update compatible transitive dependencies
-        run: npm audit fix --package-lock-only --omit=dev
-      - name: Check the new dependency tree installs reproducibly
-        run: npm ci
-      - name: Enforce production audit after remediation
-        run: npm audit --omit=dev --audit-level=moderate
-      - name: Commit reproducible lockfile fix to this PR only
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          if git diff --quiet -- package-lock.json package.json; then
-            echo "Dependency lockfile already up to date."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json package.json
-          git commit -m "fix(deps): resolve production npm audit advisories"
-          git push origin "HEAD:$HEAD_BRANCH"
-
   rules-emulator:
     name: Firestore room and call rules
     runs-on: ubuntu-latest
