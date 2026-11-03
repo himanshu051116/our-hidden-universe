@@ -31,6 +31,16 @@ test.describe('OHS 1:1 call smoke', () => {
     );
   });
 
+  test('the existing code is visible and copyable on home and landing', async ({ page }) => {
+    await login(page, process.env.OHS_TEST_USER_A_EMAIL, process.env.OHS_TEST_USER_A_PASSWORD, process.env.OHS_TEST_COUPLE_CODE);
+    const invite = page.getByRole('region', { name: 'Your couple invitation' });
+    await expect(invite).toBeVisible();
+    await expect(invite.getByLabel('Your couple code')).toHaveText(/\\S+/);
+    await expect(invite.getByRole('button', { name: 'Copy' })).toBeVisible();
+    await page.goto('/');
+    await expect(page.getByRole('region', { name: 'Your couple invitation' })).toBeVisible();
+  });
+
   test('two authenticated members can connect a video call', async ({ browser }) => {
     const callerContext = await browser.newContext({
       permissions: ['camera', 'microphone'],
@@ -203,21 +213,18 @@ test.describe('OHS 1:1 call smoke', () => {
         }), { timeout: 15_000 }).toBe(true);
       }
 
-      // Small-screen calls float above the movie instead of pushing it offscreen.
+      // Mobile calls remain directly after the video, never floating over playback controls.
       await caller.setViewportSize({ width: 390, height: 844 });
-      await expect.poll(() => callerPanel.evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
-      await expect.poll(() => callerPanel.evaluate((el) => el.parentElement === document.body)).toBe(true);
-      const topBeforeScroll = (await callerPanel.boundingBox())?.y;
-      await caller.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      const topAfterScroll = (await callerPanel.boundingBox())?.y;
-      expect(Math.abs(topBeforeScroll - topAfterScroll)).toBeLessThan(4);
-      const beforeMove = await callerPanel.boundingBox();
-      await callerPanel.getByRole('button', { name: 'Move floating call to other side' }).click();
-      const afterMove = await callerPanel.boundingBox();
-      expect(beforeMove && afterMove && Math.abs(beforeMove.x - afterMove.x) > 40).toBeTruthy();
+      await expect.poll(() => callerPanel.evaluate((el) => el.parentElement?.id)).toBe('watch-inline-call-slot');
+      await expect(caller.getByRole('navigation', { name: 'Watch Together mobile shortcuts' })).toBeVisible();
       await callerPanel.getByRole('button', { name: 'Compact' }).click();
-      await expect(callerPanel.locator('video[aria-label="Partner video"]')).toBeVisible();
+      const compactVideo = callerPanel.locator('video[aria-label="Partner video"]');
+      await expect(compactVideo).toBeVisible();
+      const compactHeight = await compactVideo.evaluate((el) => el.getBoundingClientRect().height);
+      expect(compactHeight).toBeLessThan(140);
       await callerPanel.getByRole('button', { name: 'Expand' }).click();
+      const expandedHeight = await compactVideo.evaluate((el) => el.getBoundingClientRect().height);
+      expect(expandedHeight).toBeGreaterThan(compactHeight);
       await caller.setViewportSize({ width: 1280, height: 800 });
 
       await callerPanel.getByRole('button', { name: 'Mute microphone' }).click();
