@@ -66,8 +66,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Update vulnerable production transitive dependencies
+      - name: Re-resolve locked dependencies with narrow security overrides
+        run: npm install --package-lock-only --no-fund
+      - name: Update compatible transitive dependencies
         run: npm audit fix --package-lock-only --omit=dev
       - name: Check the new dependency tree installs reproducibly
         run: npm ci
