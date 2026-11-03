@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { resolveFirestoreDatabaseId } from './firestoreDatabaseId.js';
 
 const fallbackFirebaseConfig = {
   apiKey: 'AIzaSyCQMSKneV4KmH3qpyWN7-ag-c0s9_CdFD8',
@@ -20,7 +21,7 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
 };
 
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || 'default';
+const firestoreDatabaseId = resolveFirestoreDatabaseId(import.meta.env.VITE_FIRESTORE_DATABASE_ID);
 
 export const firebaseEnabled = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 

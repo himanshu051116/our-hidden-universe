@@ -2,6 +2,7 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { resolveAdminFirestoreDatabaseId } from '../src/services/firestoreDatabaseId.js';
 
 function required(name) {
   const value = process.env[name];
@@ -32,7 +33,7 @@ export function getAdminServices() {
   const app = adminApp();
   return {
     auth: getAuth(app),
-    db: getFirestore(app),
+    db: getFirestore(app, resolveAdminFirestoreDatabaseId(process.env)),
     messaging: getMessaging(app),
   };
 }
