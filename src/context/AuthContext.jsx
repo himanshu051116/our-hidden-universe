@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from './authContextBase.jsx';
 export { useAuth } from './authContextBase.jsx';
 import {
@@ -17,6 +17,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db, firebaseEnabled } from '../services/firebaseCore';
+import { recoverVerifiedRoomCode, rememberVerifiedRoomCode } from '../services/roomRecoveryService.js';
 
 const demoUser = { uid: 'demo-lover', email: 'demo@ourhiddenuniverse.app', displayName: 'You' };
 const roomStorageKey = 'ohu-couple-room';
@@ -210,13 +211,52 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => (localStorage.getItem('ohu-demo-session') ? demoUser : null));
   const [coupleCode, setCoupleCode] = useState(() => localStorage.getItem(roomStorageKey) || '');
   const [loading, setLoading] = useState(firebaseEnabled);
+  const [restoreError, setRestoreError] = useState('');
+  const authMutationRef = useRef(false);
 
   useEffect(() => {
     if (!firebaseEnabled) return undefined;
-    return onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setLoading(false);
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+      if (!active) return;
+      if (!nextUser) {
+        setUser(null);
+        setCoupleCode('');
+        setRestoreError('');
+        setLoading(false);
+        return;
+      }
+      // During an explicit create/join flow, that transaction (not a stale
+      // restore callback) decides which room belongs to this account.
+      if (authMutationRef.current) {
+        setUser(nextUser);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const verified = await recoverVerifiedRoomCode(nextUser.uid, localStorage.getItem(roomStorageKey));
+        if (!active || auth.currentUser?.uid !== nextUser.uid || authMutationRef.current) return;
+        setCoupleCode(verified);
+        setRestoreError('');
+        if (verified) {
+          localStorage.setItem(roomStorageKey, verified);
+          rememberVerifiedRoomCode(nextUser.uid, verified).catch(() => {});
+        } else {
+          localStorage.removeItem(roomStorageKey);
+        }
+      } catch {
+        if (!active || auth.currentUser?.uid !== nextUser.uid || authMutationRef.current) return;
+        setCoupleCode('');
+        setRestoreError('We could not verify your existing room. Reconnect or enter your couple code again.');
+      } finally {
+        if (active && auth.currentUser?.uid === nextUser.uid && !authMutationRef.current) {
+          setUser(nextUser);
+          setLoading(false);
+        }
+      }
     });
+    return () => { active = false; unsubscribe(); };
   }, []);
 
   // Session restore may refresh presence, but it must never create membership
@@ -247,6 +287,8 @@ export function AuthProvider({ children }) {
       return demoUser;
     }
 
+    authMutationRef.current = true;
+    try {
     const requestedCode = normalizeCoupleCode(accessCode);
 
     if (mode === 'signup') {
@@ -269,6 +311,8 @@ export function AuthProvider({ children }) {
       localStorage.setItem(roomStorageKey, roomCode);
       setCoupleCode(roomCode);
       setUser(credential.user);
+      setRestoreError('');
+      await rememberVerifiedRoomCode(credential.user.uid, roomCode).catch(() => {});
       return credential.user;
     }
 
@@ -295,7 +339,12 @@ export function AuthProvider({ children }) {
     localStorage.setItem(roomStorageKey, roomCode);
     setCoupleCode(roomCode);
     setUser(credential.user);
+    setRestoreError('');
+    await rememberVerifiedRoomCode(credential.user.uid, roomCode).catch(() => {});
     return credential.user;
+    } finally {
+      authMutationRef.current = false;
+    }
   }
 
   async function logout() {
@@ -310,6 +359,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       loading,
+      restoreError,
       login,
       logout,
       coupleId: coupleCode || 'demo-room',
@@ -317,7 +367,7 @@ export function AuthProvider({ children }) {
       coupleCodeDisplay: coupleCode ? formatCoupleCode(coupleCode) : '',
       sharedSecret: coupleCode || import.meta.env.VITE_COUPLE_ACCESS_CODE || 'forever-us',
     }),
-    [user, loading, coupleCode],
+    [user, loading, coupleCode, restoreError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
