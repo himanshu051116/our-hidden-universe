@@ -16,9 +16,9 @@ export function resolveAdminFirestoreDatabaseId(env = {}) {
     ? env.FIRESTORE_DATABASE_ID.trim()
     : '';
 
-  if (explicitAdminId && env.VITE_FIRESTORE_DATABASE_ID && explicitAdminId !== browserId) {
+  if (explicitAdminId && explicitAdminId !== browserId) {
     throw new Error('Firestore database IDs disagree between the browser and server.');
   }
 
-  return explicitAdminId || browserId;
+  return browserId;
 }
