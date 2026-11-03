@@ -35,7 +35,7 @@ test.describe('OHS 1:1 call smoke', () => {
     await login(page, process.env.OHS_TEST_USER_A_EMAIL, process.env.OHS_TEST_USER_A_PASSWORD, process.env.OHS_TEST_COUPLE_CODE);
     const invite = page.getByRole('region', { name: 'Your couple invitation' });
     await expect(invite).toBeVisible();
-    await expect(invite.getByLabel('Your couple code')).toHaveText(/\\S+/);
+    await expect(invite.getByLabel('Your couple code')).toHaveText(/\S+/);
     await expect(invite.getByRole('button', { name: 'Copy' })).toBeVisible();
     await page.goto('/');
     await expect(page.getByRole('region', { name: 'Your couple invitation' })).toBeVisible();
