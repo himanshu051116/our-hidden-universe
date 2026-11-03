@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { acquireLocalMedia, stopMediaStream } from '../../services/mediaService.js';
 import { resolveIceServers } from '../../services/turnService.js';
+import { fetchCallInfrastructureHealth } from '../../services/callInfrastructureService.js';
 
 async function probeRelay(iceServers) {
   if (typeof RTCPeerConnection === 'undefined') return false;
@@ -33,6 +34,7 @@ export default function CallReadinessCard() {
   const [busy, setBusy] = useState('');
   const [mediaResult, setMediaResult] = useState('');
   const [relayResult, setRelayResult] = useState('');
+  const [serverResult, setServerResult] = useState('');
 
   async function testMedia() {
     if (busy) return;
@@ -49,6 +51,26 @@ export default function CallReadinessCard() {
       setMediaResult(error?.message || 'Device permissions could not be verified.');
     } finally {
       stopMediaStream(stream);
+      setBusy('');
+    }
+  }
+
+  async function testServer() {
+    if (busy) return;
+    setBusy('server');
+    setServerResult('');
+    try {
+      const health = await fetchCallInfrastructureHealth();
+      if (!health.ok || !health.firebaseAdmin) {
+        setServerResult('Server setup is incomplete or unreachable. The site can build successfully while Firebase Admin-powered call services are unavailable. Verify Vercel Admin credentials.');
+      } else if (!health.turnConfigured) {
+        setServerResult('Firebase Admin is reachable. TURN is not configured; calls may fail on restrictive networks.');
+      } else {
+        setServerResult('Firebase Admin and TURN configuration were detected. Test relay allocation and a real partner call separately.');
+      }
+    } catch {
+      setServerResult('Could not reach the authenticated server health check.');
+    } finally {
       setBusy('');
     }
   }
@@ -90,6 +112,11 @@ export default function CallReadinessCard() {
           {busy === 'relay' ? 'Testing relay…' : 'Test TURN connectivity'}
         </button>
       </div>
+      <button type="button" disabled={Boolean(busy)} onClick={testServer}
+        className="mt-3 min-h-11 rounded-xl border border-white/15 bg-white/[0.06] px-4 text-xs font-semibold text-white disabled:opacity-50">
+        {busy === 'server' ? 'Checking server…' : 'Test call server'}
+      </button>
+      {serverResult ? <p role="status" className="mt-3 text-xs leading-5 text-pink-100/80">{serverResult}</p> : null}
       {mediaResult ? <p role="status" className="mt-3 text-xs leading-5 text-pink-100/80">{mediaResult}</p> : null}
       {relayResult ? <p role="status" className="mt-3 text-xs leading-5 text-pink-100/80">{relayResult}</p> : null}
     </section>
