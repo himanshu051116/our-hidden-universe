@@ -229,8 +229,8 @@ export function AuthProvider({ children }) {
       // During an explicit create/join flow, that transaction (not a stale
       // restore callback) decides which room belongs to this account.
       if (authMutationRef.current) {
-        setUser(nextUser);
-        setLoading(false);
+        // Keep protected UI suspended until the pending create/join transaction
+        // has proved actual room membership for this account.
         return;
       }
       setLoading(true);
@@ -311,6 +311,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem(roomStorageKey, roomCode);
       setCoupleCode(roomCode);
       setUser(credential.user);
+      setLoading(false);
       setRestoreError('');
       await rememberVerifiedRoomCode(credential.user.uid, roomCode).catch(() => {});
       return credential.user;
@@ -339,6 +340,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(roomStorageKey, roomCode);
     setCoupleCode(roomCode);
     setUser(credential.user);
+    setLoading(false);
     setRestoreError('');
     await rememberVerifiedRoomCode(credential.user.uid, roomCode).catch(() => {});
     return credential.user;
