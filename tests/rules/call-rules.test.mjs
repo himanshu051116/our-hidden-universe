@@ -104,6 +104,14 @@ after(async () => {
   await env.cleanup();
 });
 
+
+test('a signed-in user can check a new room code before creating it', async () => {
+  await env.clearFirestore();
+  const dbA = authDb(A);
+  const unused = await assertSucceeds(getDoc(doc(dbA, 'couples', 'NEWROOMCODE12')));
+  assert.equal(unused.exists(), false);
+});
+
 test('creator can atomically create room + creator membership', async () => {
   await env.clearFirestore();
 

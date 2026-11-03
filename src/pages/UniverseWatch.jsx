@@ -27,6 +27,11 @@ export default function UniverseWatch() {
         </p>
       </header>
 
+      <nav aria-label="Watch Together mobile shortcuts" className="flex flex-wrap gap-2 lg:hidden">
+        <a href="#watch-party" className="rounded-full border border-blush/25 bg-blush/[0.07] px-4 py-2 text-xs font-semibold text-blush">Movie player</a>
+        <a href="#watch-inline-call-slot" className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-pink-100">Video call</a>
+      </nav>
+
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(285px,340px)] lg:gap-5">
         <div className="min-w-0">
           <WatchPartyPanel />

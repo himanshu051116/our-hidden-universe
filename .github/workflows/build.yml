@@ -39,7 +39,7 @@ jobs:
         run: npm run test:call
 
       - name: Verify Watch Together sync and readiness
-        run: node --test tests/watch-sync.test.mjs
+        run: node --test tests/watch-*.test.mjs
 
       - name: Build production app
         run: npm run build
@@ -50,6 +50,24 @@ jobs:
       - name: Audit production dependencies for known advisories
         run: npm audit --omit=dev --audit-level=moderate
 
+
+  rules-emulator:
+    name: Firestore room and call rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Verify atomic room creation and private membership
+        run: npm run test:rules
 
   landing-e2e:
     name: Guest landing browser smoke

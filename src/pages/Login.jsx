@@ -25,7 +25,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(form.email.trim(), form.password, form.accessCode, mode);
-      navigate('/universe');
+      navigate(mode === 'signup' ? '/universe/home?created=1' : '/universe/home', { replace: true });
     } catch (submitError) {
       setError(submitError.message || 'Unable to access this universe.');
     } finally {

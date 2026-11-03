@@ -24,7 +24,7 @@ import {
   setWatchPartyReady,
   subscribeWatchParty,
 } from '../services/watchPartyService.js';
-import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession } from '../services/watchSyncMath.js';
+import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession, sharedWatchPosition, watchDetailsKey } from '../services/watchSyncMath.js';
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -68,7 +68,7 @@ export default function WatchPartyPanel() {
   const { user, coupleId } = useAuth();
   const [room, setRoom] = useState(emptyWatchParty);
   const [draft, setDraft] = useState(emptyWatchParty);
-  const [setupOpen, setSetupOpen] = useState(true);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [localVideoUrl, setLocalVideoUrl] = useState('');
   const [status, setStatus] = useState('');
   const [countdown, setCountdown] = useState(0);
@@ -76,6 +76,9 @@ export default function WatchPartyPanel() {
   const [syncState, setSyncState] = useState('Waiting for sync');
   const [readyBusy, setReadyBusy] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [playerError, setPlayerError] = useState('');
+  const [playerRetry, setPlayerRetry] = useState(0);
+  const [roomChangedWhileEditing, setRoomChangedWhileEditing] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
   const videoRef = useRef(null);
   const youtubeRef = useRef(null);
@@ -89,6 +92,10 @@ export default function WatchPartyPanel() {
   const previousSessionRef = useRef('');
   const localFileSessionRef = useRef('');
   const replacedLocalFileRef = useRef(false);
+  const draftDirtyRef = useRef(false);
+  const manualTimeDirtyRef = useRef(false);
+  const lastRoomDetailsRef = useRef('');
+  const lastManualCommandRef = useRef('');
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const youtubeVideoId = room.sourceType === 'youtube' ? extractYouTubeVideoId(room.sourceUrl) : '';
@@ -109,12 +116,14 @@ export default function WatchPartyPanel() {
     : 'Waiting for playback';
 
   useEffect(() => {
-    const tick = window.setInterval(() => setClockNow(Date.now()), 4_000);
+    const tick = window.setInterval(() => setClockNow(Date.now()), 1_000);
     return () => window.clearInterval(tick);
   }, []);
 
   useEffect(() => {
     setPlayerReady(false);
+    setPlayerError('');
+    setPlayerRetry(0);
   }, [room.sessionId, room.sourceType, room.sourceUrl]);
 
   // Readiness is a recent-session signal, not a permanent checkbox:
@@ -249,15 +258,31 @@ export default function WatchPartyPanel() {
 
         previousSessionRef.current = nextRoom.sessionId || previousSessionRef.current;
         setRoom(nextRoom);
-        setDraft((current) => ({
-          ...current,
-          title: nextRoom.title,
-          sourceType: nextRoom.sourceType,
-          sourceUrl: nextRoom.sourceUrl,
-          sessionId: nextRoom.sessionId,
-        }));
-        setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
-        if (!nextRoom.title && !nextRoom.sourceUrl) setSetupOpen(true);
+        const detailsKey = watchDetailsKey(nextRoom);
+        if (detailsKey !== lastRoomDetailsRef.current) {
+          lastRoomDetailsRef.current = detailsKey;
+          if (draftDirtyRef.current) {
+            setRoomChangedWhileEditing(true);
+          } else {
+            setDraft((current) => ({
+              ...current,
+              title: nextRoom.title,
+              sourceType: nextRoom.sourceType,
+              sourceUrl: nextRoom.sourceUrl,
+              sessionId: nextRoom.sessionId,
+            }));
+            setRoomChangedWhileEditing(false);
+          }
+        }
+        // Heartbeats arrive every few seconds. They must not erase text being typed.
+        const commandId = nextRoom.playback?.commandId || '';
+        if (commandId !== lastManualCommandRef.current) {
+          lastManualCommandRef.current = commandId;
+          if (!manualTimeDirtyRef.current) setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
+        }
+        if (!nextRoom.title && !nextRoom.sourceUrl && nextRoom.sourceType !== 'local') {
+          setSetupOpen(true);
+        }
       },
       () => showStatus('We could not sync the watch room. Try again.'),
     );
@@ -367,6 +392,10 @@ export default function WatchPartyPanel() {
 
   async function saveSetup(event) {
     event.preventDefault();
+    if (roomChangedWhileEditing) {
+      showStatus('Your partner changed this room. Reload latest room details before saving.');
+      return;
+    }
     let nextDraft = { ...draft };
 
     if (draft.sourceType === 'youtube') {
@@ -403,11 +432,37 @@ export default function WatchPartyPanel() {
         setSyncState('New session ready');
       }
       replacedLocalFileRef.current = false;
+      draftDirtyRef.current = false;
+      manualTimeDirtyRef.current = false;
+      setRoomChangedWhileEditing(false);
       setSetupOpen(false);
       showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
       showStatus('Unable to save this watch room.');
     }
+  }
+
+  function retryPlayer() {
+    setPlayerError('');
+    setPlayerReady(false);
+    setPlayerRetry((current) => current + 1);
+  }
+
+  function reloadRoomDraft() {
+    draftDirtyRef.current = false;
+    setRoomChangedWhileEditing(false);
+    setDraft((current) => ({
+      ...current,
+      title: room.title,
+      sourceType: room.sourceType,
+      sourceUrl: room.sourceUrl,
+      sessionId: room.sessionId,
+    }));
+  }
+
+  function toggleSetup() {
+    if (setupOpen && draftDirtyRef.current) reloadRoomDraft();
+    setSetupOpen((current) => !current);
   }
 
   function selectLocalVideo(event) {
@@ -507,6 +562,14 @@ export default function WatchPartyPanel() {
     }
   }
 
+  const displayedPosition = hasSynchronizedPlayer && playerReady
+    ? getPlayerCurrentTime()
+    : sharedWatchPosition(room.playback, room.sync, clockNow);
+  const playbackLabel = hasSynchronizedPlayer
+    ? !playerReady ? 'Player loading'
+      : playerIsPlaying() ? 'Playing here' : 'Paused here'
+    : room.playback?.action === 'play' ? 'Start shared' : 'Paused together';
+
   return (
     <article id="watch-party" className="scroll-mt-24 space-y-4">
       <section className="glass rounded-3xl p-4 sm:p-6">
@@ -523,7 +586,7 @@ export default function WatchPartyPanel() {
               <span className="rounded-full bg-white/[0.05] px-3 py-1.5">{sourceLabel(room.sourceType)}</span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-emerald-200">
                 <CheckCircle2 size={12} />
-                {room.playback?.action === 'play' ? 'Playing' : 'Paused'} · {formatTime(room.playback?.currentTime)}
+                {playbackLabel} · {formatTime(displayedPosition)}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-300/10 px-3 py-1.5 text-sky-200">
                 <Wifi size={12} />
@@ -534,7 +597,7 @@ export default function WatchPartyPanel() {
           </div>
           <button
             type="button"
-            onClick={() => setSetupOpen((value) => !value)}
+            onClick={toggleSetup}
             className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-xs text-pink-100/65 transition hover:border-blush/45 hover:text-white"
           >
             <Settings2 size={14} />
@@ -544,11 +607,17 @@ export default function WatchPartyPanel() {
 
         {setupOpen ? (
           <form onSubmit={saveSetup} className="mt-5 grid gap-3 border-t border-white/10 pt-5 md:grid-cols-2">
+            {roomChangedWhileEditing ? (
+              <div role="status" className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[0.07] p-3 text-xs text-amber-100">
+                <span>Your partner changed this room while you were editing. Your draft is preserved.</span>
+                <button type="button" onClick={reloadRoomDraft} className="rounded-full border border-amber-200/30 px-3 py-2 font-semibold">Reload latest room</button>
+              </div>
+            ) : null}
             <label className="text-xs text-pink-100/60">
               What are you watching?
               <input
                 value={draft.title}
-                onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, title: event.target.value })); }}
                 placeholder="Movie, episode, or video title"
                 className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
               />
@@ -557,7 +626,7 @@ export default function WatchPartyPanel() {
               Source
               <select
                 value={draft.sourceType}
-                onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}
+                onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, sourceType: event.target.value })); }}
                 className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
               >
                 <option value="youtube">YouTube</option>
@@ -572,7 +641,7 @@ export default function WatchPartyPanel() {
                 Link
                 <input
                   value={draft.sourceUrl}
-                  onChange={(event) => setDraft((current) => ({ ...current, sourceUrl: event.target.value }))}
+                  onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, sourceUrl: event.target.value })); }}
                   placeholder={
                     draft.sourceType === 'youtube'
                       ? 'https://youtube.com/watch?v=...'
@@ -595,7 +664,7 @@ export default function WatchPartyPanel() {
                   <FileVideo size={16} />
                   {localVideoUrl ? 'Change selected video' : 'Choose the matching video on this device'}
                 </span>
-                <input type="file" accept="video/*" className="hidden" onChange={selectLocalVideo} />
+                <input type="file" accept="video/*" className="hidden" onChange={(event) => { draftDirtyRef.current = true; selectLocalVideo(event); }} />
               </label>
             )}
 
@@ -620,18 +689,18 @@ export default function WatchPartyPanel() {
 
       {hasYouTubePlayer ? (
         <YouTubeSyncPlayer
-          key={`${room.sessionId}:${youtubeVideoId}`}
+          key={`${room.sessionId}:${youtubeVideoId}:${playerRetry}`}
           ref={youtubeRef}
           videoId={youtubeVideoId}
-          onReady={() => { setPlayerReady(true); window.setTimeout(() => syncToRoom({ quiet: true }), 150); }}
+          onReady={() => { setPlayerError(''); setPlayerReady(true); window.setTimeout(() => syncToRoom({ quiet: true }), 150); }}
           onPlaybackAction={onPlayerPlayback}
           onSeek={onYouTubeSeek}
           onBufferingChange={onPlayerBuffering}
-          onError={showStatus}
+          onError={(message) => { setPlayerReady(false); setPlayerError(message); }}
         />
       ) : hasNativePlayer ? (
         <video
-          key={`${room.sessionId}:${playableUrl}`}
+          key={`${room.sessionId}:${playableUrl}:${playerRetry}`}
           ref={videoRef}
           src={playableUrl}
           controls
@@ -640,9 +709,9 @@ export default function WatchPartyPanel() {
           onPlay={() => onPlayerPlayback('play')}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
-          onLoadedData={() => { setPlayerReady(true); syncToRoom({ quiet: true }); }}
+          onLoadedData={() => { setPlayerError(''); setPlayerReady(true); syncToRoom({ quiet: true }); }}
           onCanPlay={() => setPlayerReady(true)}
-          onError={() => { setPlayerReady(false); showStatus('This video could not load on your device.'); }}
+          onError={() => { setPlayerReady(false); setPlayerError('This video could not load on your device. Confirm the direct link and try again.'); }}
           onWaiting={() => onPlayerBuffering(true)}
           onPlaying={() => onPlayerBuffering(false)}
           className="max-h-[65vh] w-full rounded-3xl bg-black object-contain shadow-[0_22px_70px_rgba(0,0,0,.35)]"
@@ -676,6 +745,17 @@ export default function WatchPartyPanel() {
           <button type="button" onClick={() => setSetupOpen(true)} className="mt-3 text-sm text-blush">Open room setup</button>
         </section>
       )}
+
+      {playerError ? (
+        <section role="alert" className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.07] p-4">
+          <p className="text-sm font-semibold text-amber-100">Video playback needs attention</p>
+          <p className="mt-1 text-xs leading-5 text-pink-100/75">{playerError}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={retryPlayer} className="min-h-10 rounded-full bg-blush px-4 text-xs font-semibold text-midnight">Retry player</button>
+            <button type="button" onClick={() => setSetupOpen(true)} className="min-h-10 rounded-full border border-white/20 px-4 text-xs text-pink-100">Change source</button>
+          </div>
+        </section>
+      ) : null}
 
       {/* Mobile call video lives below the player, never over its controls. */}
       <div id="watch-inline-call-slot" className="min-w-0 scroll-mt-24 lg:hidden" />
@@ -775,14 +855,14 @@ export default function WatchPartyPanel() {
                 type="text"
                 inputMode="numeric"
                 value={manualTime}
-                onChange={(event) => setManualTime(event.target.value)}
+                onChange={(event) => { manualTimeDirtyRef.current = true; setManualTime(event.target.value); }}
                 placeholder="41:18"
                 className="mt-1.5 min-h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/50"
               />
             </label>
             <button
               type="button"
-              onClick={() => broadcast('pause', parseTime(manualTime))}
+              onClick={() => { manualTimeDirtyRef.current = false; broadcast('pause', parseTime(manualTime)); }}
               className="min-h-10 rounded-full border border-blush/40 px-4 text-xs text-blush transition hover:bg-blush/10"
             >
               Sync position
@@ -792,7 +872,7 @@ export default function WatchPartyPanel() {
       </section>
 
       {status ? (
-        <p className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p>
+        <p role="status" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p>
       ) : null}
     </article>
   );

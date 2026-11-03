@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, BookOpen, Heart, Settings2, Video, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
 import HomeNightSky from '../components/HomeNightSky.jsx';
+import CoupleCodeCard from '../components/CoupleCodeCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
   loadLocalProfile,
@@ -51,7 +52,7 @@ function getPartnerStatus(members, userId, membersLoaded, memberError) {
     return {
       label: 'Waiting for partner',
       tone: 'waiting',
-      detail: 'Share your couple code from Us when they are ready to join.',
+      detail: 'Share the couple code below when they are ready to join.',
     };
   }
   const lastActive = toDate(partner.lastActiveAt);
@@ -67,6 +68,8 @@ function getPartnerStatus(members, userId, membersLoaded, memberError) {
 
 export default function UniverseHome() {
   const { user, coupleId } = useAuth();
+  const location = useLocation();
+  const justCreated = new URLSearchParams(location.search).get('created') === '1';
   const { startCall, partner: callPartner, call } = useCall();
   const [profile] = useState(() => loadLocalProfile());
   const [members, setMembers] = useState([]);
@@ -197,6 +200,8 @@ export default function UniverseHome() {
         </button>
         {callError ? <p className="mt-2 text-xs text-red-200">{callError}</p> : null}
       </section>
+
+      <CoupleCodeCard isNew={justCreated} />
 
       <HomeNightSky onSunSecret={openSunSecret} />
 

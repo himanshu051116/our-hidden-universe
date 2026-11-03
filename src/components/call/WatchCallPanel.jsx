@@ -158,6 +158,7 @@ export default function WatchCallPanel() {
 
   const panel = (
     <aside
+      id="watch-call-panel"
       aria-label="Watch Together video call"
       data-watch-call-status={call.status}
       className="min-w-0 w-full self-start overflow-hidden rounded-[24px] border border-white/15 bg-[#151020]/95 shadow-[0_15px_45px_rgba(0,0,0,.22)] lg:sticky lg:top-24 lg:rounded-[26px] lg:shadow-[0_24px_70px_rgba(0,0,0,.3)]"
@@ -186,7 +187,9 @@ export default function WatchCallPanel() {
       <div id="watch-call-content" className={expanded ? 'p-3.5 sm:p-4' : active ? 'p-2' : 'hidden'}>
         {active ? (
           <>
-            <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_center,#322240,#090912_75%)]">
+            <div className={expanded
+              ? 'relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_center,#322240,#090912_75%)]'
+              : 'relative h-28 w-full overflow-hidden rounded-xl border border-white/10 bg-[#120f1b]'}>
               {!audioOnly && remoteStream ? (
                 <video
                   ref={remoteRef}
@@ -213,7 +216,7 @@ export default function WatchCallPanel() {
                 <audio ref={remoteRef} autoPlay playsInline aria-label="Partner audio" />
               ) : null}
 
-              {!audioOnly && localStream ? (
+              {expanded && !audioOnly && localStream ? (
                 <video
                   ref={localRef}
                   autoPlay
@@ -240,7 +243,7 @@ export default function WatchCallPanel() {
               </button>
             ) : null}
 
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <div className={expanded ? 'mt-3 flex flex-wrap items-center justify-center gap-2' : 'mt-2 flex items-center justify-center gap-2'}>
               <button
                 type="button"
                 onClick={toggleMute}
@@ -261,7 +264,7 @@ export default function WatchCallPanel() {
                   >
                     {call.cameraEnabled ? <Camera size={18} /> : <CameraOff size={18} />}
                   </button>
-                  <button
+                  {expanded ? <button
                     type="button"
                     onClick={switchLocalCamera}
                     disabled={!hasCamera}
@@ -269,7 +272,7 @@ export default function WatchCallPanel() {
                     aria-label="Switch camera"
                   >
                     <RefreshCw size={17} />
-                  </button>
+                  </button> : null}
                 </>
               ) : null}
               <button
@@ -281,7 +284,7 @@ export default function WatchCallPanel() {
                 <PhoneOff size={20} />
               </button>
             </div>
-            {connected && !audioOnly ? (
+            {expanded && connected && !audioOnly ? (
               <button
                 type="button"
                 onClick={changeDataSaver}
