@@ -392,6 +392,10 @@ export default function WatchPartyPanel() {
 
   async function saveSetup(event) {
     event.preventDefault();
+    if (roomChangedWhileEditing) {
+      showStatus('Your partner changed this room. Reload latest room details before saving.');
+      return;
+    }
     let nextDraft = { ...draft };
 
     if (draft.sourceType === 'youtube') {
