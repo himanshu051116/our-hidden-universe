@@ -39,7 +39,7 @@ jobs:
         run: npm run test:call
 
       - name: Verify Watch Together sync and readiness
-        run: node --test tests/watch-sync.test.mjs
+        run: node --test tests/watch-*.test.mjs
 
       - name: Build production app
         run: npm run build
