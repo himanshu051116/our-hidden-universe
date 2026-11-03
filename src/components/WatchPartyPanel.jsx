@@ -24,7 +24,7 @@ import {
   setWatchPartyReady,
   subscribeWatchParty,
 } from '../services/watchPartyService.js';
-import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession } from '../services/watchSyncMath.js';
+import { readyMembers, getCommandDelay, commandPlaybackPosition, estimatedSharedTime, driftCorrection, shouldResetWatchSession, sharedWatchPosition, watchDetailsKey } from '../services/watchSyncMath.js';
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -68,7 +68,7 @@ export default function WatchPartyPanel() {
   const { user, coupleId } = useAuth();
   const [room, setRoom] = useState(emptyWatchParty);
   const [draft, setDraft] = useState(emptyWatchParty);
-  const [setupOpen, setSetupOpen] = useState(true);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [localVideoUrl, setLocalVideoUrl] = useState('');
   const [status, setStatus] = useState('');
   const [countdown, setCountdown] = useState(0);
@@ -76,6 +76,9 @@ export default function WatchPartyPanel() {
   const [syncState, setSyncState] = useState('Waiting for sync');
   const [readyBusy, setReadyBusy] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [playerError, setPlayerError] = useState('');
+  const [playerRetry, setPlayerRetry] = useState(0);
+  const [roomChangedWhileEditing, setRoomChangedWhileEditing] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
   const videoRef = useRef(null);
   const youtubeRef = useRef(null);
@@ -89,6 +92,10 @@ export default function WatchPartyPanel() {
   const previousSessionRef = useRef('');
   const localFileSessionRef = useRef('');
   const replacedLocalFileRef = useRef(false);
+  const draftDirtyRef = useRef(false);
+  const manualTimeDirtyRef = useRef(false);
+  const lastRoomDetailsRef = useRef('');
+  const lastManualCommandRef = useRef('');
 
   const playableUrl = room.sourceType === 'local' ? localVideoUrl : room.sourceUrl;
   const youtubeVideoId = room.sourceType === 'youtube' ? extractYouTubeVideoId(room.sourceUrl) : '';
@@ -109,12 +116,14 @@ export default function WatchPartyPanel() {
     : 'Waiting for playback';
 
   useEffect(() => {
-    const tick = window.setInterval(() => setClockNow(Date.now()), 4_000);
+    const tick = window.setInterval(() => setClockNow(Date.now()), 1_000);
     return () => window.clearInterval(tick);
   }, []);
 
   useEffect(() => {
     setPlayerReady(false);
+    setPlayerError('');
+    setPlayerRetry(0);
   }, [room.sessionId, room.sourceType, room.sourceUrl]);
 
   // Readiness is a recent-session signal, not a permanent checkbox:
@@ -249,15 +258,31 @@ export default function WatchPartyPanel() {
 
         previousSessionRef.current = nextRoom.sessionId || previousSessionRef.current;
         setRoom(nextRoom);
-        setDraft((current) => ({
-          ...current,
-          title: nextRoom.title,
-          sourceType: nextRoom.sourceType,
-          sourceUrl: nextRoom.sourceUrl,
-          sessionId: nextRoom.sessionId,
-        }));
-        setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
-        if (!nextRoom.title && !nextRoom.sourceUrl) setSetupOpen(true);
+        const detailsKey = watchDetailsKey(nextRoom);
+        if (detailsKey !== lastRoomDetailsRef.current) {
+          lastRoomDetailsRef.current = detailsKey;
+          if (draftDirtyRef.current) {
+            setRoomChangedWhileEditing(true);
+          } else {
+            setDraft((current) => ({
+              ...current,
+              title: nextRoom.title,
+              sourceType: nextRoom.sourceType,
+              sourceUrl: nextRoom.sourceUrl,
+              sessionId: nextRoom.sessionId,
+            }));
+            setRoomChangedWhileEditing(false);
+          }
+        }
+        // Heartbeats arrive every few seconds. They must not erase text being typed.
+        const commandId = nextRoom.playback?.commandId || '';
+        if (commandId !== lastManualCommandRef.current) {
+          lastManualCommandRef.current = commandId;
+          if (!manualTimeDirtyRef.current) setManualTime(formatTime(nextRoom.playback?.currentTime || 0));
+        }
+        if (!nextRoom.title && !nextRoom.sourceUrl && nextRoom.sourceType !== 'local') {
+          setSetupOpen(true);
+        }
       },
       () => showStatus('We could not sync the watch room. Try again.'),
     );
@@ -403,11 +428,37 @@ export default function WatchPartyPanel() {
         setSyncState('New session ready');
       }
       replacedLocalFileRef.current = false;
+      draftDirtyRef.current = false;
+      manualTimeDirtyRef.current = false;
+      setRoomChangedWhileEditing(false);
       setSetupOpen(false);
       showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
       showStatus('Unable to save this watch room.');
     }
+  }
+
+  function retryPlayer() {
+    setPlayerError('');
+    setPlayerReady(false);
+    setPlayerRetry((current) => current + 1);
+  }
+
+  function reloadRoomDraft() {
+    draftDirtyRef.current = false;
+    setRoomChangedWhileEditing(false);
+    setDraft((current) => ({
+      ...current,
+      title: room.title,
+      sourceType: room.sourceType,
+      sourceUrl: room.sourceUrl,
+      sessionId: room.sessionId,
+    }));
+  }
+
+  function toggleSetup() {
+    if (setupOpen && draftDirtyRef.current) reloadRoomDraft();
+    setSetupOpen((current) => !current);
   }
 
   function selectLocalVideo(event) {
@@ -506,6 +557,14 @@ export default function WatchPartyPanel() {
       if (!quiet) showStatus(`Matched the shared room at ${formatTime(command.currentTime)}`);
     }
   }
+
+  const displayedPosition = hasSynchronizedPlayer && playerReady
+    ? getPlayerCurrentTime()
+    : sharedWatchPosition(room.playback, room.sync, clockNow);
+  const playbackLabel = hasSynchronizedPlayer
+    ? !playerReady ? 'Player loading'
+      : playerIsPlaying() ? 'Playing here' : 'Paused here'
+    : room.playback?.action === 'play' ? 'Start shared' : 'Paused together';
 
   return (
     <article id="watch-party" className="scroll-mt-24 space-y-4">
