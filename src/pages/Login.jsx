@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { HeartHandshake, KeyRound, Mail, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageShell from '../components/PageShell.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -8,7 +8,10 @@ import { useAuth } from '../context/AuthContext.jsx';
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { login } = useAuth();
+  const { login, user, coupleCode, loading, restoreError } = useAuth();
+  useEffect(() => {
+    if (!loading && user && coupleCode) navigate('/universe/home', { replace: true });
+  }, [loading, user, coupleCode, navigate]);
   const mode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
   const changeMode = (nextMode) => {
     setError('');
@@ -146,7 +149,8 @@ export default function Login() {
             </details>
           ) : coupleCodeField}
 
-          {error ? <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p> : null}
+          {restoreError && !error ? <p role="status" className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">{restoreError}</p> : null}
+          {error ? <p role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p> : null}
 
           <button
             type="submit"
