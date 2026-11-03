@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   timestampMs, readyMembers, getCommandDelay, commandPlaybackPosition,
   estimatedSharedTime, driftCorrection, shouldResetWatchSession,
+  sharedWatchPosition, watchDetailsKey,
 } from '../src/services/watchSyncMath.js';
 
 test('readiness requires two fresh distinct members of the same session', () => {
@@ -69,4 +70,23 @@ test('second partner selecting the matching local file preserves watch session',
     { sessionId: 'online-a', sourceType: 'youtube', sourceUrl: 'v1' },
     { sourceType: 'youtube', sourceUrl: 'v1' },
   ), false);
+});
+
+test('room details key ignores heartbeats but tracks source edits', () => {
+  const room = { sessionId: 'a', title: 'Movie A', sourceType: 'youtube', sourceUrl: 'https://youtu.be/demo' };
+  const key = watchDetailsKey(room);
+  assert.equal(watchDetailsKey({ ...room, sync: { currentTime: 34, playing: true } }), key);
+  assert.equal(watchDetailsKey({ ...room, playback: { currentTime: 39, commandId: 'new' } }), key);
+  assert.notEqual(watchDetailsKey({ ...room, title: 'Movie B' }), key);
+  assert.notEqual(watchDetailsKey({ ...room, sessionId: 'b' }), key);
+});
+
+test('watch UI shows current position rather than last playback command', () => {
+  const now = 1_700_000_100_000;
+  const playback = { action: 'play', currentTime: 5, sessionId: 'same', committedAt: now - 10_000, delayMs: 0 };
+  const sync = { playing: true, buffering: false, currentTime: 20, sessionId: 'same', sampledAt: now - 2_000 };
+  assert.equal(sharedWatchPosition(playback, sync, now), 22);
+  assert.equal(sharedWatchPosition(playback, { ...sync, sampledAt: now - 40_000 }, now), 13);
+  assert.equal(sharedWatchPosition(playback, { ...sync, sessionId: 'old' }, now), 13);
+  assert.equal(sharedWatchPosition({ ...playback, action: 'pause', currentTime: 9 }, sync, now), 9);
 });
