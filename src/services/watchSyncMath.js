@@ -70,3 +70,22 @@ export function shouldResetWatchSession(previous, next, localFileWasReplaced = f
   if ((previous.sourceUrl || '') !== (next.sourceUrl || '')) return true;
   return next.sourceType === 'local' && localFileWasReplaced;
 }
+
+/** Playback position for status UI, using the freshest valid leader sample. */
+export function sharedWatchPosition(playback, sync, now = Date.now()) {
+  if (playback?.action === 'play') {
+    const sample = sync?.sessionId && playback?.sessionId && sync.sessionId !== playback.sessionId
+      ? null
+      : estimatedSharedTime(sync, now);
+    return sample ?? commandPlaybackPosition(playback, now);
+  }
+  return Math.max(0, Number(playback?.currentTime) || 0);
+}
+
+/** Only title/source/session changes should replace room setup fields, not heartbeats. */
+export function watchDetailsKey(room) {
+  return JSON.stringify([
+    room?.sessionId || '', room?.title || '',
+    room?.sourceType || '', room?.sourceUrl || '',
+  ]);
+}
