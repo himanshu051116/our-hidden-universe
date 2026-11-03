@@ -51,6 +51,24 @@ jobs:
         run: npm audit --omit=dev --audit-level=moderate
 
 
+  rules-emulator:
+    name: Firestore room and call rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Verify atomic room creation and private membership
+        run: npm run test:rules
+
   landing-e2e:
     name: Guest landing browser smoke
     runs-on: ubuntu-latest
