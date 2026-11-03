@@ -285,9 +285,13 @@ service cloud.firestore {
     }
 
     match /couples/{coupleId} {
+      // An authenticated creator must be able to check that an unused room code
+      // does not exist before creating the room in a transaction. Existing
+      // completed rooms remain hidden from non-members.
       allow get: if signedIn()
         && (
-          coupleMember(coupleId)
+          resource == null
+          || coupleMember(coupleId)
           || !resource.data.keys().hasAny(['memberCount'])
           || resource.data.memberCount < 2
         );
