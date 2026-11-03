@@ -582,7 +582,7 @@ export default function WatchPartyPanel() {
               <span className="rounded-full bg-white/[0.05] px-3 py-1.5">{sourceLabel(room.sourceType)}</span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-emerald-200">
                 <CheckCircle2 size={12} />
-                {room.playback?.action === 'play' ? 'Playing' : 'Paused'} · {formatTime(room.playback?.currentTime)}
+                {playbackLabel} · {formatTime(displayedPosition)}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-300/10 px-3 py-1.5 text-sky-200">
                 <Wifi size={12} />
@@ -593,7 +593,7 @@ export default function WatchPartyPanel() {
           </div>
           <button
             type="button"
-            onClick={() => setSetupOpen((value) => !value)}
+            onClick={toggleSetup}
             className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-xs text-pink-100/65 transition hover:border-blush/45 hover:text-white"
           >
             <Settings2 size={14} />
@@ -603,11 +603,17 @@ export default function WatchPartyPanel() {
 
         {setupOpen ? (
           <form onSubmit={saveSetup} className="mt-5 grid gap-3 border-t border-white/10 pt-5 md:grid-cols-2">
+            {roomChangedWhileEditing ? (
+              <div role="status" className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/30 bg-amber-300/[0.07] p-3 text-xs text-amber-100">
+                <span>Your partner changed this room while you were editing. Your draft is preserved.</span>
+                <button type="button" onClick={reloadRoomDraft} className="rounded-full border border-amber-200/30 px-3 py-2 font-semibold">Reload latest room</button>
+              </div>
+            ) : null}
             <label className="text-xs text-pink-100/60">
               What are you watching?
               <input
                 value={draft.title}
-                onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, title: event.target.value })); }}
                 placeholder="Movie, episode, or video title"
                 className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
               />
@@ -616,7 +622,7 @@ export default function WatchPartyPanel() {
               Source
               <select
                 value={draft.sourceType}
-                onChange={(event) => setDraft((current) => ({ ...current, sourceType: event.target.value }))}
+                onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, sourceType: event.target.value })); }}
                 className="mt-1.5 min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/60"
               >
                 <option value="youtube">YouTube</option>
@@ -631,7 +637,7 @@ export default function WatchPartyPanel() {
                 Link
                 <input
                   value={draft.sourceUrl}
-                  onChange={(event) => setDraft((current) => ({ ...current, sourceUrl: event.target.value }))}
+                  onChange={(event) => { draftDirtyRef.current = true; setDraft((current) => ({ ...current, sourceUrl: event.target.value })); }}
                   placeholder={
                     draft.sourceType === 'youtube'
                       ? 'https://youtube.com/watch?v=...'
@@ -654,7 +660,7 @@ export default function WatchPartyPanel() {
                   <FileVideo size={16} />
                   {localVideoUrl ? 'Change selected video' : 'Choose the matching video on this device'}
                 </span>
-                <input type="file" accept="video/*" className="hidden" onChange={selectLocalVideo} />
+                <input type="file" accept="video/*" className="hidden" onChange={(event) => { draftDirtyRef.current = true; selectLocalVideo(event); }} />
               </label>
             )}
 
@@ -679,18 +685,18 @@ export default function WatchPartyPanel() {
 
       {hasYouTubePlayer ? (
         <YouTubeSyncPlayer
-          key={`${room.sessionId}:${youtubeVideoId}`}
+          key={`${room.sessionId}:${youtubeVideoId}:${playerRetry}`}
           ref={youtubeRef}
           videoId={youtubeVideoId}
-          onReady={() => { setPlayerReady(true); window.setTimeout(() => syncToRoom({ quiet: true }), 150); }}
+          onReady={() => { setPlayerError(''); setPlayerReady(true); window.setTimeout(() => syncToRoom({ quiet: true }), 150); }}
           onPlaybackAction={onPlayerPlayback}
           onSeek={onYouTubeSeek}
           onBufferingChange={onPlayerBuffering}
-          onError={showStatus}
+          onError={(message) => { setPlayerReady(false); setPlayerError(message); }}
         />
       ) : hasNativePlayer ? (
         <video
-          key={`${room.sessionId}:${playableUrl}`}
+          key={`${room.sessionId}:${playableUrl}:${playerRetry}`}
           ref={videoRef}
           src={playableUrl}
           controls
@@ -699,9 +705,9 @@ export default function WatchPartyPanel() {
           onPlay={() => onPlayerPlayback('play')}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
-          onLoadedData={() => { setPlayerReady(true); syncToRoom({ quiet: true }); }}
+          onLoadedData={() => { setPlayerError(''); setPlayerReady(true); syncToRoom({ quiet: true }); }}
           onCanPlay={() => setPlayerReady(true)}
-          onError={() => { setPlayerReady(false); showStatus('This video could not load on your device.'); }}
+          onError={() => { setPlayerReady(false); setPlayerError('This video could not load on your device. Confirm the direct link and try again.'); }}
           onWaiting={() => onPlayerBuffering(true)}
           onPlaying={() => onPlayerBuffering(false)}
           className="max-h-[65vh] w-full rounded-3xl bg-black object-contain shadow-[0_22px_70px_rgba(0,0,0,.35)]"
@@ -735,6 +741,17 @@ export default function WatchPartyPanel() {
           <button type="button" onClick={() => setSetupOpen(true)} className="mt-3 text-sm text-blush">Open room setup</button>
         </section>
       )}
+
+      {playerError ? (
+        <section role="alert" className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.07] p-4">
+          <p className="text-sm font-semibold text-amber-100">Video playback needs attention</p>
+          <p className="mt-1 text-xs leading-5 text-pink-100/75">{playerError}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={retryPlayer} className="min-h-10 rounded-full bg-blush px-4 text-xs font-semibold text-midnight">Retry player</button>
+            <button type="button" onClick={() => setSetupOpen(true)} className="min-h-10 rounded-full border border-white/20 px-4 text-xs text-pink-100">Change source</button>
+          </div>
+        </section>
+      ) : null}
 
       {/* Mobile call video lives below the player, never over its controls. */}
       <div id="watch-inline-call-slot" className="min-w-0 scroll-mt-24 lg:hidden" />
@@ -834,14 +851,14 @@ export default function WatchPartyPanel() {
                 type="text"
                 inputMode="numeric"
                 value={manualTime}
-                onChange={(event) => setManualTime(event.target.value)}
+                onChange={(event) => { manualTimeDirtyRef.current = true; setManualTime(event.target.value); }}
                 placeholder="41:18"
                 className="mt-1.5 min-h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-blush/50"
               />
             </label>
             <button
               type="button"
-              onClick={() => broadcast('pause', parseTime(manualTime))}
+              onClick={() => { manualTimeDirtyRef.current = false; broadcast('pause', parseTime(manualTime)); }}
               className="min-h-10 rounded-full border border-blush/40 px-4 text-xs text-blush transition hover:bg-blush/10"
             >
               Sync position
@@ -851,7 +868,7 @@ export default function WatchPartyPanel() {
       </section>
 
       {status ? (
-        <p className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p>
+        <p role="status" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-center text-xs text-pink-100/70">{status}</p>
       ) : null}
     </article>
   );
