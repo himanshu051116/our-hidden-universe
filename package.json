@@ -63,6 +63,10 @@
     "@grpc/grpc-js": "1.14.6",
     "gaxios": {
       "uuid": "11.1.1"
+    },
+    "@google-cloud/firestore-api": {
+      "glob": "^14.0.2",
+      "minimatch": "^11.0.1"
     }
   }
 }
