@@ -317,3 +317,22 @@ test('only room creator may upload bounded JPG sun surprise; no lists', async ()
   await assertFails(setDoc(doc(dbB, ...target), { ...valid, uploadedBy: B }));
 });
 
+
+test('account room pointer is readable only by its owner and only after membership', async () => {
+  await env.clearFirestore();
+  await createTwoMemberRoom();
+  const dbA = authDb(A);
+  const dbB = authDb(B);
+  const dbC = authDb(C);
+  const pointer = doc(dbA, 'accountRooms', A);
+  const valid = { roomCode: ROOM, updatedAt: Timestamp.now() };
+  await assertSucceeds(setDoc(pointer, valid));
+  const stored = await assertSucceeds(getDoc(pointer));
+  assert.equal(stored.data().roomCode, ROOM);
+  await assertFails(getDoc(doc(dbB, 'accountRooms', A)));
+  await assertFails(setDoc(doc(dbB, 'accountRooms', A), valid));
+  await assertFails(setDoc(doc(dbC, 'accountRooms', C), valid));
+  await assertFails(setDoc(doc(dbA, 'accountRooms', A), { ...valid, roomCode: 'NOTAROOM' }));
+  await assertSucceeds(setDoc(doc(dbB, 'accountRooms', B), valid));
+});
+
