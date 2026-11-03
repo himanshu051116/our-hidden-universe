@@ -77,6 +77,7 @@ export default function WatchPartyPanel() {
   const [readyBusy, setReadyBusy] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState('');
+  const [playbackNeedsGesture, setPlaybackNeedsGesture] = useState(false);
   const [playerRetry, setPlayerRetry] = useState(0);
   const [roomChangedWhileEditing, setRoomChangedWhileEditing] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
@@ -123,6 +124,7 @@ export default function WatchPartyPanel() {
   useEffect(() => {
     setPlayerReady(false);
     setPlayerError('');
+    setPlaybackNeedsGesture(false);
     setPlayerRetry(0);
   }, [room.sessionId, room.sourceType, room.sourceUrl]);
 
@@ -198,7 +200,12 @@ export default function WatchPartyPanel() {
     resetNativePlaybackRate();
     if (Math.abs(video.currentTime - target) > 0.65) video.currentTime = target;
     if (action === 'play') {
-      video.play().catch(() => showStatus('Tap the player once if your browser blocks automatic playback.'));
+      video.play()
+        .then(() => setPlaybackNeedsGesture(false))
+        .catch(() => {
+          setPlaybackNeedsGesture(true);
+          setSyncState('Tap to resume playback locally');
+        });
     } else {
       video.pause();
     }
@@ -439,6 +446,22 @@ export default function WatchPartyPanel() {
       showStatus(sourceChanged ? 'New watch session ready for both of you.' : 'Watch room updated.');
     } catch {
       showStatus('Unable to save this watch room.');
+    }
+  }
+
+  async function resumeBlockedPlayback() {
+    if (!bothReady) {
+      showStatus('Both partners must be Ready before playback can resume.');
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      await video.play();
+      setPlaybackNeedsGesture(false);
+      setSyncState('Playback resumed on this device');
+    } catch {
+      setPlaybackNeedsGesture(true);
     }
   }
 
@@ -706,7 +729,7 @@ export default function WatchPartyPanel() {
           controls
           playsInline
           preload="metadata"
-          onPlay={() => onPlayerPlayback('play')}
+          onPlay={() => { setPlaybackNeedsGesture(false); onPlayerPlayback('play'); }}
           onPause={() => onPlayerPlayback('pause')}
           onSeeked={() => onPlayerPlayback(videoRef.current?.paused ? 'pause' : 'play')}
           onLoadedData={() => { setPlayerError(''); setPlayerReady(true); syncToRoom({ quiet: true }); }}
@@ -745,6 +768,14 @@ export default function WatchPartyPanel() {
           <button type="button" onClick={() => setSetupOpen(true)} className="mt-3 text-sm text-blush">Open room setup</button>
         </section>
       )}
+
+      {playbackNeedsGesture && hasNativePlayer ? (
+        <section role="alert" className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.07] p-4">
+          <p className="text-sm font-semibold text-amber-100">Playback needs a tap on this device</p>
+          <p className="mt-1 text-xs leading-5 text-pink-100/75">Your browser blocked automatic playback or could not start it. The room is still connected.</p>
+          <button type="button" onClick={resumeBlockedPlayback} className="mt-3 min-h-11 rounded-full bg-blush px-4 text-xs font-semibold text-midnight">Resume video</button>
+        </section>
+      ) : null}
 
       {playerError ? (
         <section role="alert" className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.07] p-4">
