@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, useLocation } from 'react-router-dom';
 import App from './App.jsx';
@@ -9,12 +9,22 @@ const PrivateRuntime = lazy(() => import('./PrivateRuntime.jsx'));
 
 function RootRuntime() {
   const location = useLocation();
-  // Returning members need session restoration on "/", but a first-time
-  // guest should not download Firebase, call signaling or notification code.
   const savedRoom = Boolean(
     localStorage.getItem('ohu-couple-room') || localStorage.getItem('ohu-demo-session')
   );
-  const privateRoute = location.pathname !== '/' || savedRoom;
+  // Render guest landing immediately, but probe Firebase Auth when idle:
+  // losing localStorage must not permanently hide a still-signed-in member.
+  const [restoreStarted, setRestoreStarted] = useState(false);
+  useEffect(() => {
+    if (restoreStarted || location.pathname !== '/' || savedRoom) return undefined;
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(() => setRestoreStarted(true), { timeout: 1600 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(() => setRestoreStarted(true), 600);
+    return () => window.clearTimeout(id);
+  }, [restoreStarted, location.pathname, savedRoom]);
+  const privateRoute = location.pathname !== '/' || savedRoom || restoreStarted;
 
   if (!privateRoute) {
     return (
