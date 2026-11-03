@@ -10,9 +10,13 @@ import {
   Stars,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import PageShell from '../components/PageShell.jsx';
 import GuestUniverseDemo from '../components/GuestUniverseDemo.jsx';
 import { useAuth } from '../context/authContextBase.jsx';
+
+// Keep guest landing's first-visit bundle small; the code card loads only for members.
+const CoupleCodeCard = lazy(() => import('../components/CoupleCodeCard.jsx'));
 
 const features = [
   {
@@ -150,6 +154,9 @@ export default function Landing() {
                 <span className="hidden sm:inline">Try the preview</span>
               </a>
             </motion.div>
+            {hasUniverse ? (
+              <Suspense fallback={null}><CoupleCodeCard compact /></Suspense>
+            ) : null}
             <p className="mt-4 flex items-center gap-2 text-xs leading-5 text-pink-100/60">
               <Lock size={13} className="shrink-0 text-[#ffc2d6]" aria-hidden="true" />
               Just the two of you. Make a space, then invite your person.
