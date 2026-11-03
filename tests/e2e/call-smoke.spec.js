@@ -46,7 +46,7 @@ test.describe('OHS 1:1 call smoke', () => {
     await page.evaluate(() => localStorage.removeItem('ohu-couple-room'));
     await page.goto('/');
     await expect(page.getByRole('region', { name: 'Your couple invitation' })).toBeVisible({ timeout: 20000 });
-    await expect(page.getByLabel('Your couple code')).toContainText(/\\S+/);
+    await expect(page.getByLabel('Your couple code')).toContainText(/\S+/);
   });
 
   test('two authenticated members can connect a video call', async ({ browser }) => {
