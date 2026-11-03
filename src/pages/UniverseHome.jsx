@@ -1,10 +1,10 @@
-import { motion } from 'framer-motion';
-import { ArrowRight, BookOpen, Heart, Settings2, Video, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Settings2, Video } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCall } from '../calls/CallContext.jsx';
 import HomeNightSky from '../components/HomeNightSky.jsx';
 import CoupleCodeCard from '../components/CoupleCodeCard.jsx';
+import PrivateSunSurprise from '../components/PrivateSunSurprise.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
   loadLocalProfile,
@@ -14,9 +14,6 @@ import {
   touchMemberPresence,
 } from '../services/coupleDashboardService.js';
 import { firebaseEnabled } from '../services/firebase.js';
-
-const sunSecretPassword = 'jaan';
-const sunSurpriseImage = '/secret-sun-surprise.jpeg';
 
 function toDate(value) {
   if (!value) return null;
@@ -78,9 +75,6 @@ export default function UniverseHome() {
   const [readTogether, setReadTogether] = useState(() => loadLocalReadTogether());
   const [callError, setCallError] = useState('');
   const [sunSecretOpen, setSunSecretOpen] = useState(false);
-  const [sunSecretUnlocked, setSunSecretUnlocked] = useState(false);
-  const [sunPassword, setSunPassword] = useState('');
-  const [sunError, setSunError] = useState('');
   const partnerStatus = getPartnerStatus(members, user?.uid, membersLoaded, memberError);
 
   useEffect(() => {
@@ -136,24 +130,10 @@ export default function UniverseHome() {
 
   function openSunSecret() {
     setSunSecretOpen(true);
-    setSunError('');
-  }
-
-  function unlockSunSecret(event) {
-    event.preventDefault();
-    if (sunPassword.trim().toLowerCase() !== sunSecretPassword) {
-      setSunError('That is not the secret word yet.');
-      return;
-    }
-    setSunSecretUnlocked(true);
-    setSunError('');
   }
 
   function closeSunSecret() {
     setSunSecretOpen(false);
-    setSunSecretUnlocked(false);
-    setSunPassword('');
-    setSunError('');
   }
 
   const videoCallDisabled = !callPartner || call.status !== 'idle';
@@ -221,60 +201,7 @@ export default function UniverseHome() {
         </div>
       </Link>
 
-      {sunSecretOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/75 px-4 py-6 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="glass relative w-full max-w-lg rounded-3xl p-5 sm:p-6"
-          >
-            <button
-              type="button"
-              onClick={closeSunSecret}
-              className="absolute right-4 top-4 rounded-full border border-white/15 p-2 text-pink-100 transition hover:border-blush/70 hover:text-white"
-              aria-label="Close secret"
-            >
-              <X size={16} />
-            </button>
-
-            {!sunSecretUnlocked ? (
-              <form onSubmit={unlockSunSecret} className="pr-8">
-                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-roseGold">
-                  <Heart size={13} />
-                  Sun secret
-                </p>
-                <h3 className="mt-2 font-display text-3xl text-white">The sun is holding something for you.</h3>
-                <p className="mt-2 text-sm text-pink-100/70">Enter the secret word to open it.</p>
-                <input
-                  type="password"
-                  autoFocus
-                  value={sunPassword}
-                  onChange={(event) => {
-                    setSunPassword(event.target.value);
-                    setSunError('');
-                  }}
-                  className="mt-5 w-full rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white outline-none transition focus:border-blush/70"
-                  placeholder="Secret word"
-                />
-                {sunError ? <p className="mt-2 text-xs text-red-200">{sunError}</p> : null}
-                <button type="submit" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-gradient-to-r from-blush to-roseGold px-5 py-2.5 text-sm font-semibold text-midnight transition hover:brightness-105">
-                  <Heart size={15} />
-                  Unlock
-                </button>
-              </form>
-            ) : (
-              <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/35">
-                <div className="relative">
-                  <img src={sunSurpriseImage} alt="A private surprise" className="max-h-[72vh] w-full object-contain" />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-5 pb-5 pt-16 text-center">
-                    <p className="font-display text-3xl text-white drop-shadow sm:text-5xl">Forever yours</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        </div>
-      ) : null}
+      {sunSecretOpen ? <PrivateSunSurprise onClose={closeSunSecret} /> : null}
     </div>
   );
 }

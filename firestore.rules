@@ -284,6 +284,23 @@ service cloud.firestore {
         && request.resource.data.revision is number;
     }
 
+    // Per-account room pointer: lets an existing Firebase Auth session recover
+    // after browser localStorage is cleared, without listing private rooms.
+    match /accountRooms/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['roomCode', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['roomCode', 'updatedAt'])
+        && request.resource.data.roomCode is string
+        && request.resource.data.roomCode.size() > 0
+        && request.resource.data.roomCode.size() <= 64
+        && request.resource.data.roomCode.matches('^[A-Z0-9]+$')
+        && exists(/databases/$(database)/documents/couples/$(request.resource.data.roomCode)/members/$(userId));
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /couples/{coupleId} {
       // An authenticated creator must be able to check that an unused room code
       // does not exist before creating the room in a transaction. Existing
@@ -350,6 +367,25 @@ service cloud.firestore {
         allow create: if coupleMember(coupleId) && (validTextMessageCreate() || validMediaMessageCreate());
         allow update: if coupleMember(coupleId) && validMessageUpdate();
         allow delete: if coupleMember(coupleId);
+      }
+
+      // Unlike Cloud Storage cross-service lookups, this belongs to the
+      // application's named Firestore database.
+      match /surprises/{surpriseId} {
+        allow get: if surpriseId == 'sun' && coupleMember(coupleId);
+        allow list: if false;
+        allow create, update: if surpriseId == 'sun'
+          && coupleMember(coupleId)
+          && get(/databases/$(database)/documents/couples/$(coupleId)).data.createdBy == request.auth.uid
+          && request.resource.data.keys().hasOnly(['imageData', 'uploadedBy', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['imageData', 'uploadedBy', 'updatedAt'])
+          && request.resource.data.imageData is string
+          && request.resource.data.imageData.size() <= 490000
+          && request.resource.data.imageData.matches('^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$')
+          && request.resource.data.uploadedBy == request.auth.uid;
+        allow delete: if surpriseId == 'sun'
+          && coupleMember(coupleId)
+          && get(/databases/$(database)/documents/couples/$(coupleId)).data.createdBy == request.auth.uid;
       }
 
       match /memories/{memoryId} {

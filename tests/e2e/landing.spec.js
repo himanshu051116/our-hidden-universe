@@ -181,3 +181,8 @@ test('malformed link fragments do not crash the landing route', async ({ page })
   await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
   expect(crashes).toEqual([]);
 });
+
+test('previously public surprise photo is no longer served as a static image', async ({ page }) => {
+  const response = await page.request.get('/secret-sun-surprise.jpeg');
+  expect(String(response.headers()['content-type'] || '')).not.toMatch(/^image\/jpeg/i);
+});

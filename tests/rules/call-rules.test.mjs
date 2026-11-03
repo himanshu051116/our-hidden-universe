@@ -282,3 +282,57 @@ test('device registration can only be written by that member', async () => {
     ),
   );
 });
+
+test('sun surprise is read by both verified members but never by outsiders', async () => {
+  await env.clearFirestore();
+  await createTwoMemberRoom();
+  const dbA = authDb(A);
+  const dbB = authDb(B);
+  const dbC = authDb(C);
+  const path = ['couples', ROOM, 'surprises', 'sun'];
+  const sample = {
+    imageData: 'data:image/jpeg;base64,/9j/2Q==',
+    uploadedBy: A,
+    updatedAt: Timestamp.now(),
+  };
+  await assertSucceeds(setDoc(doc(dbA, ...path), sample));
+  const verified = await assertSucceeds(getDoc(doc(dbB, ...path)));
+  assert.equal(verified.data().imageData, sample.imageData);
+  await assertFails(getDoc(doc(dbC, ...path)));
+});
+
+test('only room creator may upload bounded JPG sun surprise; no lists', async () => {
+  await env.clearFirestore();
+  await createTwoMemberRoom();
+  const dbA = authDb(A);
+  const dbB = authDb(B);
+  const dbC = authDb(C);
+  const target = ['couples', ROOM, 'surprises', 'sun'];
+  const valid = { imageData: 'data:image/jpeg;base64,/9j/2Q==', uploadedBy: A, updatedAt: Timestamp.now() };
+  await assertFails(setDoc(doc(dbB, ...target), { ...valid, uploadedBy: B }));
+  await assertFails(setDoc(doc(dbC, ...target), { ...valid, uploadedBy: C }));
+  await assertFails(setDoc(doc(dbA, ...target), { ...valid, imageData: 'https://public.example/photo.jpg' }));
+  await assertFails(setDoc(doc(dbA, ...target), { ...valid, imageData: 'data:image/jpeg;base64,' + 'a'.repeat(490001) }));
+  await assertSucceeds(setDoc(doc(dbA, ...target), valid));
+  await assertFails(setDoc(doc(dbB, ...target), { ...valid, uploadedBy: B }));
+});
+
+
+test('account room pointer is readable only by its owner and only after membership', async () => {
+  await env.clearFirestore();
+  await createTwoMemberRoom();
+  const dbA = authDb(A);
+  const dbB = authDb(B);
+  const dbC = authDb(C);
+  const pointer = doc(dbA, 'accountRooms', A);
+  const valid = { roomCode: ROOM, updatedAt: Timestamp.now() };
+  await assertSucceeds(setDoc(pointer, valid));
+  const stored = await assertSucceeds(getDoc(pointer));
+  assert.equal(stored.data().roomCode, ROOM);
+  await assertFails(getDoc(doc(dbB, 'accountRooms', A)));
+  await assertFails(setDoc(doc(dbB, 'accountRooms', A), valid));
+  await assertFails(setDoc(doc(dbC, 'accountRooms', C), valid));
+  await assertFails(setDoc(doc(dbA, 'accountRooms', A), { ...valid, roomCode: 'NOTAROOM' }));
+  await assertSucceeds(setDoc(doc(dbB, 'accountRooms', B), valid));
+});
+
